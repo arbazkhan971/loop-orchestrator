@@ -4,6 +4,17 @@
   "description": "Configurable tmux-based AI agent team orchestrator for Claude Code, Codex, Gemini CLI, and custom terminal agents.",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://github.com/arbazkhan971/loop-orchestrator#readme",
+  "bugs": {
+    "url": "https://github.com/arbazkhan971/loop-orchestrator/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arbazkhan971/loop-orchestrator.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "loop": "./dist/cli.js",
     "loop-orchestrator": "./dist/cli.js"

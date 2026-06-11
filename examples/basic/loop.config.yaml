@@ -11,12 +11,14 @@ projects:
       planner:
         type: claude
         model: claude-opus-4-8
+        dangerouslySkipPermissions: false
         args: []
       executor:
         type: codex
         model: gpt-5.4
         effort: medium
-        args: ["--yolo"]
+        yolo: false
+        args: []
     roles:
       - name: pm
         title: Product planner

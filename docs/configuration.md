@@ -9,14 +9,22 @@ providers:
   frontend:
     type: claude
     model: claude-sonnet-4-6
-    args: ["--dangerously-skip-permissions"]
+    dangerouslySkipPermissions: true
+    args: []
     promptMode: interactive
   backend:
     type: codex
     model: gpt-5.4
     effort: medium
-    args: ["--yolo"]
+    yolo: true
+    args: []
 ```
+
+Unsafe execution switches:
+
+- `dangerouslySkipPermissions: true` adds `--dangerously-skip-permissions` for Claude providers.
+- `yolo: true` adds `--yolo` for Codex providers.
+- Raw `args` still work and are not duplicated when the typed switch is also enabled.
 
 Prompt modes:
 

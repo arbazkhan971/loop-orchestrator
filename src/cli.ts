@@ -139,18 +139,21 @@ projects:
       planner:
         type: claude
         model: claude-opus-4-8
-        args: ["--dangerously-skip-permissions"]
+        dangerouslySkipPermissions: true
+        args: []
         promptMode: interactive
       frontend:
         type: claude
         model: claude-sonnet-4-6
-        args: ["--dangerously-skip-permissions"]
+        dangerouslySkipPermissions: true
+        args: []
         promptMode: interactive
       backend:
         type: codex
         model: gpt-5.4
         effort: medium
-        args: ["--yolo"]
+        yolo: true
+        args: []
         promptMode: interactive
       scout:
         type: gemini

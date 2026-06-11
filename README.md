@@ -10,6 +10,7 @@ Most agent workflows are either one-off prompts or hard-coded scripts. Loop Orch
 
 - Role-based tmux sessions for long-running agents
 - Per-role provider and model selection
+- First-class unsafe-mode switches for tools that support them
 - Project briefs, repo scope, and guardrails
 - Prompt-only mode for safe setup, execute mode for launching agents
 - Local dashboard for session status and logs
@@ -65,6 +66,21 @@ loop dashboard            # open local web dashboard
 
 ## Example Roles
 
+Provider flags can be configured without raw argument strings:
+
+```yaml
+providers:
+  frontend:
+    type: claude
+    model: claude-sonnet-4-6
+    dangerouslySkipPermissions: true
+  backend:
+    type: codex
+    model: gpt-5.4
+    effort: medium
+    yolo: true
+```
+
 ```yaml
 roles:
   - name: cto
@@ -93,6 +109,7 @@ Recommended defaults:
 
 - Use prompt-only mode until the team config is correct.
 - Assign narrow repository scopes per role.
+- Enable `dangerouslySkipPermissions` or `yolo` only for disposable worktrees or trusted environments.
 - Keep production branches protected.
 - Require tests before release review.
 - Avoid destructive database commands in all prompts.

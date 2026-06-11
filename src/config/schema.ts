@@ -6,6 +6,8 @@ export const ProviderSchema = z.object({
   args: z.array(z.string()).default([]),
   model: z.string().optional(),
   effort: z.string().optional(),
+  dangerouslySkipPermissions: z.boolean().default(false),
+  yolo: z.boolean().default(false),
   promptMode: z.enum(["interactive", "stdin", "argument"]).default("interactive"),
   env: z.record(z.string(), z.string()).default({})
 });

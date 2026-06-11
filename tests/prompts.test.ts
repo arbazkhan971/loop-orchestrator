@@ -26,7 +26,7 @@ describe("prompt generation", () => {
           workingDir: ".",
           safetyMode: "workspace-write",
           providers: {
-            dev: { type: "codex", args: [], promptMode: "interactive", env: {} }
+            dev: { type: "codex", args: [], dangerouslySkipPermissions: false, yolo: false, promptMode: "interactive", env: {} }
           },
           repositories: [
             {

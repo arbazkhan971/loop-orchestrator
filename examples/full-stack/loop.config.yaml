@@ -12,16 +12,19 @@ projects:
       cto:
         type: claude
         model: claude-opus-4-8
+        dangerouslySkipPermissions: false
         args: []
       frontend:
         type: claude
         model: claude-sonnet-4-6
+        dangerouslySkipPermissions: true
         args: []
       backend:
         type: codex
         model: gpt-5.4
         effort: medium
-        args: ["--yolo"]
+        yolo: true
+        args: []
       scout:
         type: gemini
         model: gemini-3.5-flash

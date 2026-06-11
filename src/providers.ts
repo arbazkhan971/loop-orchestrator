@@ -14,6 +14,9 @@ export function buildProviderCommand(provider: ProviderConfig, promptFile: strin
 
   if (provider.type === "claude") {
     const args = [...provider.args];
+    if (provider.dangerouslySkipPermissions && !args.includes("--dangerously-skip-permissions")) {
+      args.push("--dangerously-skip-permissions");
+    }
     if (provider.model) args.push("--model", provider.model);
     if (provider.promptMode === "argument") args.push("-p", `Read ${promptFile} and execute the task.`);
     return { command: provider.command ?? "claude", args, env: provider.env };
@@ -21,6 +24,9 @@ export function buildProviderCommand(provider: ProviderConfig, promptFile: strin
 
   if (provider.type === "codex") {
     const args = [...provider.args];
+    if (provider.yolo && !args.includes("--yolo")) {
+      args.push("--yolo");
+    }
     if (provider.model) args.push("--model", provider.model);
     if (provider.effort) args.push("--effort", provider.effort);
     if (provider.promptMode === "argument") args.push(`Read ${promptFile} and execute the task.`);

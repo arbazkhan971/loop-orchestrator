@@ -5,6 +5,7 @@ Loop Orchestrator should be treated as an automation launcher, not a permission 
 ## Recommended Guardrails
 
 - Start in prompt-only mode first.
+- Treat `dangerouslySkipPermissions: true` and `yolo: true` as full-trust execution modes.
 - Use dedicated worktrees for each issue.
 - Keep production branches protected.
 - Require PR review for database migrations, auth, billing, and security changes.

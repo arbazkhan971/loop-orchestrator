@@ -20,10 +20,27 @@ Most agent workflows are either one-off prompts or hard-coded scripts. Loop Orch
 
 AI agents, agent orchestrator, tmux, Claude Code, Codex, Gemini CLI, multi-agent coding, agentic coding, autonomous software engineering agents, terminal agents, workflow automation, GitHub automation, AI devtools.
 
+## Prerequisites
+
+Install the tools you want Loop Orchestrator to control:
+
+```bash
+# Required
+brew install tmux
+
+# Optional providers. Install and log in to whichever ones you use.
+claude
+codex
+gemini
+```
+
+You can use subscription/OAuth CLI login or API keys. Loop Orchestrator detects local CLI state and API-key env vars, but it never stores secret values in config.
+
 ## Install
 
 ```bash
 npm install -g loop-orchestrator
+loop --version
 ```
 
 For local development:
@@ -34,47 +51,241 @@ npm run build
 npm link
 ```
 
-## Quick Start
+## Step-by-Step Setup
+
+### 1. Open Your Project
+
+Run Loop Orchestrator from the repo or workspace where you want the team config to live.
 
 ```bash
-# 1. Go to the repo where you want the agent team to run.
 cd /path/to/your/repo
-
-# 2. Create loop.config.yaml and brief.md.
-loop init
-
-# 3. Detect locally installed/authenticated Claude, Codex, Gemini, or agy.
-loop auth status
-loop auth configure --write
-
-# 4. Validate config.
-loop validate
-
-# 5. Start tmux sessions in safe prompt-only mode.
-loop start --run issue-123
-tmux ls
-
-# 6. Open the dashboard.
-loop dashboard
 ```
 
-By default, `loop start` creates tmux shells with prompt files. This is intentionally safe. To launch configured agent commands:
+For a full-stack setup, you can also create one orchestration folder and point it at multiple repos:
+
+```bash
+mkdir ai-team
+cd ai-team
+```
+
+### 2. Initialize Config
+
+```bash
+loop init
+```
+
+This creates:
+
+- `loop.config.yaml`: providers, repositories, roles, and loops
+- `brief.md`: project brief sent to every role
+- `.loop/`: generated prompts and run metadata
+
+### 3. Detect Local Provider Auth
+
+```bash
+loop auth status
+loop auth configure --write
+```
+
+This checks your machine for:
+
+- `claude`
+- `codex`
+- `gemini`
+- `agy`
+- API env vars such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`
+
+It writes auth metadata into `loop.config.yaml`, for example:
+
+```yaml
+providers:
+  frontend:
+    type: claude
+    command: claude
+    auth:
+      mode: subscription
+      configured: true
+```
+
+### 4. Edit Your Project Brief
+
+Open `brief.md` and describe the product, coding rules, test expectations, release rules, and any hard constraints.
+
+Example:
+
+```markdown
+# Project Brief
+
+Build changes in small PRs.
+Use worktrees for parallel tasks.
+Run tests before reporting completion.
+Do not run destructive database commands.
+```
+
+### 5. Configure Repositories
+
+Edit `loop.config.yaml` and point repositories to real local paths:
+
+```yaml
+repositories:
+  - name: frontend-app
+    path: ~/work/frontend-app
+    role: frontend
+    defaultBranch: main
+    protectedBranches: [main, production]
+
+  - name: backend-api
+    path: ~/work/backend-api
+    role: backend
+    defaultBranch: main
+    protectedBranches: [main, production]
+```
+
+### 6. Configure Providers
+
+Use the provider best suited for each role:
+
+```yaml
+providers:
+  planner:
+    type: claude
+    model: claude-opus-4-8
+    command: claude
+    auth:
+      mode: subscription
+      configured: true
+
+  frontend:
+    type: claude
+    model: claude-sonnet-4-6
+    command: claude
+    dangerouslySkipPermissions: true
+    auth:
+      mode: subscription
+      configured: true
+
+  backend:
+    type: codex
+    model: gpt-5.4
+    effort: medium
+    command: codex
+    yolo: true
+    auth:
+      mode: subscription
+      configured: true
+
+  scout:
+    type: gemini
+    model: gemini-3.5-flash
+    command: gemini
+    auth:
+      mode: subscription
+      configured: true
+```
+
+Unsafe switches:
+
+- `dangerouslySkipPermissions: true` adds Claude `--dangerously-skip-permissions`
+- `yolo: true` adds Codex `--yolo`
+
+Use these only in trusted local/VM worktrees.
+
+### 7. Configure Roles
+
+Roles decide which tmux sessions start and what each agent is responsible for.
+
+```yaml
+roles:
+  - name: cto
+    title: Technical lead and architecture reviewer
+    provider: planner
+    repositories: [frontend-app, backend-api]
+    responsibilities:
+      - Convert issues into acceptance criteria and implementation plans.
+      - Review architecture, risk, rollback, and backward compatibility.
+
+  - name: fe1
+    title: Frontend engineer
+    provider: frontend
+    repositories: [frontend-app]
+    responsibilities:
+      - Implement responsive UI changes.
+      - Run browser smoke tests and capture screenshots.
+
+  - name: be1
+    title: Backend engineer
+    provider: backend
+    repositories: [backend-api]
+    responsibilities:
+      - Implement APIs, migrations, and tests.
+      - Avoid destructive database operations.
+
+  - name: qa1
+    title: QA and release reviewer
+    provider: backend
+    repositories: [frontend-app, backend-api]
+    responsibilities:
+      - Verify acceptance criteria.
+      - Produce final merge readiness notes.
+```
+
+### 8. Validate Config
+
+```bash
+loop validate
+```
+
+Fix any config errors before starting sessions.
+
+### 9. Start in Safe Mode First
+
+Safe mode creates tmux sessions and prompt files, but does not launch provider CLIs.
+
+```bash
+loop start --run issue-123
+tmux ls
+```
+
+Open one session:
+
+```bash
+tmux attach -t loop-demo-product-issue-123-cto
+```
+
+### 10. Launch Real Agents
+
+After safe mode looks right, launch configured provider commands:
 
 ```bash
 loop start --run issue-123 --execute
 ```
 
-If you installed the package and immediately ran `loop auth status`, you may see:
-
-```text
-No loop.config.yaml found.
-```
-
-That means you are in a repo that has not been initialized yet. Run:
+Start only specific roles:
 
 ```bash
-loop init
-loop auth status
+loop start --run issue-123 --role fe1 qa1 --execute
+```
+
+### 11. Use the Dashboard
+
+```bash
+loop dashboard
+```
+
+Open:
+
+```text
+http://localhost:4318
+```
+
+The dashboard shows active sessions and lets you inspect recent tmux output.
+
+### 12. Check Logs and Stop Runs
+
+```bash
+loop status
+loop logs loop-demo-product-issue-123-fe1
+loop stop issue-123
 ```
 
 ## Core Commands
@@ -89,6 +300,75 @@ loop status               # list loop sessions
 loop logs <session>       # capture recent tmux pane output
 loop stop bug-42          # kill sessions for a run
 loop dashboard            # open local web dashboard
+```
+
+## Common Workflows
+
+### One Repo
+
+```bash
+cd ~/work/backend-api
+loop init
+loop auth configure --write
+loop validate
+loop start --run fix-login-bug --execute
+```
+
+### Frontend + Backend
+
+```bash
+mkdir ~/work/product-team
+cd ~/work/product-team
+loop init
+```
+
+Then edit `loop.config.yaml`:
+
+```yaml
+repositories:
+  - name: frontend-app
+    path: ~/work/frontend-app
+    role: frontend
+  - name: backend-api
+    path: ~/work/backend-api
+    role: backend
+```
+
+Run:
+
+```bash
+loop auth configure --write
+loop validate
+loop start --run issue-456 --execute
+```
+
+### VM Setup
+
+Install once on the VM user that will run the agents:
+
+```bash
+npm install -g loop-orchestrator
+claude
+codex
+gemini
+```
+
+Then:
+
+```bash
+cd ~/work/product-team
+loop init
+loop auth configure --write
+loop start --run overnight-batch --execute
+```
+
+Because sessions run in tmux, they keep running if your laptop disconnects.
+
+### Update Package
+
+```bash
+npm install -g loop-orchestrator@latest
+loop --version
 ```
 
 ## Example Roles
@@ -171,6 +451,56 @@ loop dashboard --port 4318
 ```
 
 The dashboard shows active sessions and lets you inspect recent tmux output from the browser.
+
+## Troubleshooting
+
+### `No loop.config.yaml found`
+
+Run:
+
+```bash
+loop init
+loop auth status
+```
+
+### `tmux: command not found`
+
+Install tmux:
+
+```bash
+brew install tmux
+```
+
+On Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y tmux
+```
+
+### Provider Not Detected
+
+Install and log in to the provider CLI, then rerun:
+
+```bash
+loop auth status
+loop auth configure --write
+```
+
+### Start Fresh for a Run
+
+```bash
+loop stop issue-123
+loop start --run issue-123 --execute
+```
+
+### Inspect Generated Prompts
+
+Prompts are written under:
+
+```text
+.loop/runs/<run-id>/prompts/
+```
 
 ## License
 

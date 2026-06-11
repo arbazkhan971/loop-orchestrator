@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command } from "commander";
+import { configureLocalAuth, getAuthStatus } from "./auth.js";
 import { loadConfig, getProject } from "./config/load.js";
 import { startDashboard } from "./dashboard/server.js";
 import { capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
@@ -34,6 +35,40 @@ program
     const opts = program.opts();
     const loaded = loadConfig(opts.config);
     output({ ok: true, config: loaded.path, projects: loaded.config.projects.map((project) => project.name) }, opts.json);
+  });
+
+const auth = program.command("auth").description("inspect and configure local provider authentication");
+
+auth
+  .command("status")
+  .description("show local Claude, Codex, Gemini, and custom provider readiness")
+  .option("-p, --project <name>", "project name")
+  .action((options) => {
+    const opts = program.opts();
+    const loaded = loadConfig(opts.config);
+    const project = getProject(loaded, options.project);
+    output({ project: project.name, providers: getAuthStatus(project) }, opts.json);
+  });
+
+auth
+  .command("configure")
+  .description("write detected local provider auth settings into loop.config.yaml")
+  .option("-p, --project <name>", "project name")
+  .option("--write", "write detected settings")
+  .action((options) => {
+    const opts = program.opts();
+    const loaded = loadConfig(opts.config);
+    const project = getProject(loaded, options.project);
+    if (!options.write) {
+      output({
+        project: project.name,
+        dryRun: true,
+        message: "Run `loop auth configure --write` to update loop.config.yaml.",
+        providers: getAuthStatus(project)
+      }, opts.json);
+      return;
+    }
+    output({ project: project.name, updated: loaded.path, providers: configureLocalAuth(loaded, project.name) }, opts.json);
   });
 
 program
@@ -139,12 +174,16 @@ projects:
       planner:
         type: claude
         model: claude-opus-4-8
+        auth:
+          mode: auto
         dangerouslySkipPermissions: true
         args: []
         promptMode: interactive
       frontend:
         type: claude
         model: claude-sonnet-4-6
+        auth:
+          mode: auto
         dangerouslySkipPermissions: true
         args: []
         promptMode: interactive
@@ -152,12 +191,16 @@ projects:
         type: codex
         model: gpt-5.4
         effort: medium
+        auth:
+          mode: auto
         yolo: true
         args: []
         promptMode: interactive
       scout:
         type: gemini
         model: gemini-3.5-flash
+        auth:
+          mode: auto
         args: []
         promptMode: interactive
     repositories:

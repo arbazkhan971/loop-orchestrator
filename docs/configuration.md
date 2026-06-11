@@ -9,6 +9,9 @@ providers:
   frontend:
     type: claude
     model: claude-sonnet-4-6
+    auth:
+      mode: subscription
+      configured: true
     dangerouslySkipPermissions: true
     args: []
     promptMode: interactive
@@ -16,9 +19,28 @@ providers:
     type: codex
     model: gpt-5.4
     effort: medium
+    auth:
+      mode: subscription
+      configured: true
     yolo: true
     args: []
 ```
+
+Auth modes:
+
+- `auto`: let `loop auth configure --write` detect local setup.
+- `subscription`: use locally authenticated CLI state, such as prior OAuth/login.
+- `api-key`: use the named env var for API billing.
+- `env`: user still needs to install/login/set an env var.
+
+Local setup:
+
+```bash
+loop auth status
+loop auth configure --write
+```
+
+Secret values are never stored. Only the env var name is written.
 
 Unsafe execution switches:
 

@@ -11,6 +11,7 @@ Loop Orchestrator should be treated as an automation launcher, not a permission 
 - Require PR review for database migrations, auth, billing, and security changes.
 - Use read-only or staging databases during end-to-end testing.
 - Avoid secrets in `loop.config.yaml`; prefer environment variables.
+- `loop auth configure --write` stores auth metadata only, not secret values.
 - Add destructive-operation warnings in every role prompt.
 
 ## Database Safety

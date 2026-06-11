@@ -11,12 +11,16 @@ projects:
       planner:
         type: claude
         model: claude-opus-4-8
+        auth:
+          mode: auto
         dangerouslySkipPermissions: false
         args: []
       executor:
         type: codex
         model: gpt-5.4
         effort: medium
+        auth:
+          mode: auto
         yolo: false
         args: []
     roles:

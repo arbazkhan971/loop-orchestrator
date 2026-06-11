@@ -12,22 +12,30 @@ projects:
       cto:
         type: claude
         model: claude-opus-4-8
+        auth:
+          mode: auto
         dangerouslySkipPermissions: false
         args: []
       frontend:
         type: claude
         model: claude-sonnet-4-6
+        auth:
+          mode: auto
         dangerouslySkipPermissions: true
         args: []
       backend:
         type: codex
         model: gpt-5.4
         effort: medium
+        auth:
+          mode: auto
         yolo: true
         args: []
       scout:
         type: gemini
         model: gemini-3.5-flash
+        auth:
+          mode: auto
         args: []
     repositories:
       - name: frontend-app

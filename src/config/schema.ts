@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+export const AuthSchema = z.object({
+  mode: z.enum(["auto", "subscription", "api-key", "env"]).default("auto"),
+  env: z.string().optional(),
+  configured: z.boolean().default(false),
+  notes: z.string().optional()
+});
+
 export const ProviderSchema = z.object({
   type: z.enum(["claude", "codex", "gemini", "custom"]),
   command: z.string().optional(),
@@ -8,6 +15,10 @@ export const ProviderSchema = z.object({
   effort: z.string().optional(),
   dangerouslySkipPermissions: z.boolean().default(false),
   yolo: z.boolean().default(false),
+  auth: AuthSchema.default({
+    mode: "auto",
+    configured: false
+  }),
   promptMode: z.enum(["interactive", "stdin", "argument"]).default("interactive"),
   env: z.record(z.string(), z.string()).default({})
 });
@@ -65,6 +76,7 @@ export const RootConfigSchema = z.object({
 });
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
+export type AuthConfig = z.infer<typeof AuthSchema>;
 export type RepositoryConfig = z.infer<typeof RepositorySchema>;
 export type RoleConfig = z.infer<typeof RoleSchema>;
 export type LoopConfig = z.infer<typeof LoopSchema>;

@@ -40,6 +40,8 @@ npm link
 mkdir my-ai-team
 cd my-ai-team
 loop init
+loop auth status
+loop auth configure --write
 loop validate
 loop start --run issue-123
 tmux ls
@@ -56,6 +58,8 @@ loop start --run issue-123 --execute
 
 ```bash
 loop init                 # create loop.config.yaml and brief.md
+loop auth status          # inspect local provider CLI/API-key readiness
+loop auth configure --write # write detected local auth mode into config
 loop validate             # validate config
 loop start --run bug-42   # start role sessions in tmux
 loop status               # list loop sessions
@@ -73,13 +77,36 @@ providers:
   frontend:
     type: claude
     model: claude-sonnet-4-6
+    auth:
+      mode: subscription
+      configured: true
     dangerouslySkipPermissions: true
   backend:
     type: codex
     model: gpt-5.4
     effort: medium
+    auth:
+      mode: subscription
+      configured: true
     yolo: true
 ```
+
+## Local Auth Setup
+
+Loop Orchestrator can inspect your machine and write provider auth hints into config:
+
+```bash
+loop auth status
+loop auth configure --write
+```
+
+It detects:
+
+- Claude CLI from `claude`, or API env vars `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`
+- Codex CLI from `codex`, or API env var `OPENAI_API_KEY`
+- Gemini CLI from `gemini` or `agy`, or env vars `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_CLOUD_PROJECT`
+
+The command stores only metadata such as auth mode, command name, and env var name. It does not write secret values into `loop.config.yaml`.
 
 ```yaml
 roles:

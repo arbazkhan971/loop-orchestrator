@@ -37,14 +37,24 @@ npm link
 ## Quick Start
 
 ```bash
-mkdir my-ai-team
-cd my-ai-team
+# 1. Go to the repo where you want the agent team to run.
+cd /path/to/your/repo
+
+# 2. Create loop.config.yaml and brief.md.
 loop init
+
+# 3. Detect locally installed/authenticated Claude, Codex, Gemini, or agy.
 loop auth status
 loop auth configure --write
+
+# 4. Validate config.
 loop validate
+
+# 5. Start tmux sessions in safe prompt-only mode.
 loop start --run issue-123
 tmux ls
+
+# 6. Open the dashboard.
 loop dashboard
 ```
 
@@ -52,6 +62,19 @@ By default, `loop start` creates tmux shells with prompt files. This is intentio
 
 ```bash
 loop start --run issue-123 --execute
+```
+
+If you installed the package and immediately ran `loop auth status`, you may see:
+
+```text
+No loop.config.yaml found.
+```
+
+That means you are in a repo that has not been initialized yet. Run:
+
+```bash
+loop init
+loop auth status
 ```
 
 ## Core Commands

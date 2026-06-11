@@ -33,7 +33,8 @@ program
   .description("validate the loop config")
   .action(() => {
     const opts = program.opts();
-    const loaded = loadConfig(opts.config);
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
     output({ ok: true, config: loaded.path, projects: loaded.config.projects.map((project) => project.name) }, opts.json);
   });
 
@@ -45,7 +46,8 @@ auth
   .option("-p, --project <name>", "project name")
   .action((options) => {
     const opts = program.opts();
-    const loaded = loadConfig(opts.config);
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
     const project = getProject(loaded, options.project);
     output({ project: project.name, providers: getAuthStatus(project) }, opts.json);
   });
@@ -57,7 +59,8 @@ auth
   .option("--write", "write detected settings")
   .action((options) => {
     const opts = program.opts();
-    const loaded = loadConfig(opts.config);
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
     const project = getProject(loaded, options.project);
     if (!options.write) {
       output({
@@ -80,7 +83,8 @@ program
   .option("--execute", "launch configured agent commands instead of prompt-only shells")
   .action((options) => {
     const opts = program.opts();
-    const loaded = loadConfig(opts.config);
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
     const project = getProject(loaded, options.project);
     const sessions = startProjectSessions(loaded, project, options.run, {
       execute: Boolean(options.execute),
@@ -94,7 +98,8 @@ program
   .description("list loop tmux sessions")
   .action(() => {
     const opts = program.opts();
-    const loaded = loadConfig(opts.config);
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
     output({ sessions: listSessions(loaded.config.defaults.namespace) }, opts.json);
   });
 
@@ -113,7 +118,8 @@ program
   .description("stop all tmux sessions for a run")
   .action((run) => {
     const opts = program.opts();
-    const loaded = loadConfig(opts.config);
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
     output({ killed: stopRun(loaded.config.defaults.namespace, run) }, opts.json);
   });
 
@@ -124,11 +130,44 @@ program
   .option("--port <port>", "dashboard port")
   .action((options) => {
     const opts = program.opts();
-    const loaded = loadConfig(opts.config);
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
     startDashboard(loaded, { project: options.project, port: options.port ? Number(options.port) : undefined });
   });
 
 program.parse();
+
+function safeLoadConfig(configPath: string | undefined, asJson: boolean): ReturnType<typeof loadConfig> | undefined {
+  try {
+    return loadConfig(configPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("No loop.config.yaml")) {
+      const help = {
+        ok: false,
+        error: "No loop.config.yaml found.",
+        nextSteps: [
+          "Run `loop init` in this repo.",
+          "Run `loop auth status` again.",
+          "Run `loop auth configure --write` to store detected local provider metadata."
+        ]
+      };
+      if (asJson) {
+        console.log(JSON.stringify(help, null, 2));
+      } else {
+        console.error("No loop.config.yaml found.");
+        console.error("");
+        console.error("Run:");
+        console.error("  loop init");
+        console.error("  loop auth status");
+        console.error("  loop auth configure --write");
+      }
+      process.exitCode = 1;
+      return undefined;
+    }
+    throw error;
+  }
+}
 
 function output(data: unknown, asJson: boolean) {
   if (asJson) {

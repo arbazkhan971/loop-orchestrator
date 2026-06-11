@@ -1,8 +1,23 @@
-# Loop Orchestrator
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arbazkhan971/loop-orchestrator/main/assets/logo.svg" alt="Loop Orchestrator logo" width="760">
+</p>
 
-Configurable tmux-based AI engineering teams for Claude Code, Codex, Gemini CLI, and any terminal agent.
+<h1 align="center">Loop Orchestrator</h1>
 
-Loop Orchestrator helps you run a persistent AI team inside tmux: planners, frontend engineers, backend engineers, QA reviewers, scouts, and release leads. Each role gets a project brief, assigned repositories, model/provider settings, safety rules, and a repeatable operating loop.
+<p align="center">
+  <strong>Open-source tmux AI agent teams for Claude Code, Codex, Gemini CLI, and custom terminal coding agents.</strong>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/loop-orchestrator"><img src="https://img.shields.io/npm/v/loop-orchestrator?color=0ea5e9&label=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/loop-orchestrator"><img src="https://img.shields.io/npm/dm/loop-orchestrator?color=14b8a6" alt="npm downloads"></a>
+  <a href="https://github.com/arbazkhan971/loop-orchestrator/actions"><img src="https://img.shields.io/github/actions/workflow/status/arbazkhan971/loop-orchestrator/ci.yml?branch=main&label=ci" alt="CI status"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-facc15" alt="MIT license"></a>
+</p>
+
+Loop Orchestrator helps you run a persistent AI software engineering team inside tmux: CTO/planner, frontend engineer, backend engineer, full-stack engineer, QA reviewer, scout, and release lead. Each role gets a project brief, assigned repositories, model/provider settings, safety rules, and a repeatable operating loop.
+
+Use it as a lightweight open-source alternative to hard-coded agent scripts when you want **multi-agent coding workflows**, **terminal AI teams**, **Claude Code orchestration**, **Codex automation**, **Gemini CLI scouting**, and **tmux-based background execution**.
 
 ## Why This Exists
 
@@ -16,9 +31,25 @@ Most agent workflows are either one-off prompts or hard-coded scripts. Loop Orch
 - Local dashboard for session status and logs
 - Generic YAML config that works across teams and projects
 
+## Who It Is For
+
+- Solo developers running multiple coding agents in parallel
+- Engineering leads assigning planner, frontend, backend, QA, and release roles
+- Teams using Claude Code, Codex, Gemini CLI, or custom terminal agents
+- Developers who want tmux sessions that keep running on a VM after disconnecting
+- Open-source maintainers who want repeatable AI code review and release workflows
+
+## What You Can Build
+
+- AI software engineering team in tmux
+- Multi-agent coding workflow for frontend and backend repos
+- Automated PR planning, implementation, QA, and release review loops
+- Long-running background agent sessions on a devbox or VM
+- Configurable coding-agent dashboard for local teams
+
 ## Keywords
 
-AI agents, agent orchestrator, tmux, Claude Code, Codex, Gemini CLI, multi-agent coding, agentic coding, autonomous software engineering agents, terminal agents, workflow automation, GitHub automation, AI devtools.
+AI agents, agent orchestrator, tmux orchestrator, Claude Code, Codex, OpenAI Codex, Gemini CLI, multi-agent coding, agentic coding, autonomous coding agents, terminal agents, software engineering agents, AI devtools, developer tools, workflow automation, GitHub automation, code review agents, LLM agents.
 
 ## Prerequisites
 

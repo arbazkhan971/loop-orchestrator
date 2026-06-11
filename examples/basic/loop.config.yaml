@@ -1,0 +1,30 @@
+version: 1
+defaults:
+  namespace: loop
+  dashboardPort: 4318
+
+projects:
+  - name: basic-demo
+    brief: brief.md
+    workingDir: .
+    providers:
+      planner:
+        type: claude
+        model: claude-opus-4-8
+        args: []
+      executor:
+        type: codex
+        model: gpt-5.4
+        effort: medium
+        args: ["--yolo"]
+    roles:
+      - name: pm
+        title: Product planner
+        provider: planner
+        responsibilities:
+          - Convert issues into clear implementation plans.
+      - name: dev
+        title: Software engineer
+        provider: executor
+        responsibilities:
+          - Implement the task and run tests.

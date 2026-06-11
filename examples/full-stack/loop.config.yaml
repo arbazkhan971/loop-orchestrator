@@ -1,0 +1,56 @@
+version: 1
+defaults:
+  namespace: loop
+  dashboardPort: 4318
+
+projects:
+  - name: full-stack-demo
+    brief: brief.md
+    workingDir: .
+    safetyMode: workspace-write
+    providers:
+      cto:
+        type: claude
+        model: claude-opus-4-8
+        args: []
+      frontend:
+        type: claude
+        model: claude-sonnet-4-6
+        args: []
+      backend:
+        type: codex
+        model: gpt-5.4
+        effort: medium
+        args: ["--yolo"]
+      scout:
+        type: gemini
+        model: gemini-3.5-flash
+        args: []
+    repositories:
+      - name: frontend-app
+        path: ~/work/frontend-app
+        role: frontend
+      - name: backend-api
+        path: ~/work/backend-api
+        role: backend
+    roles:
+      - name: cto
+        title: Architecture and release lead
+        provider: cto
+        repositories: [frontend-app, backend-api]
+      - name: fe1
+        title: Frontend engineer
+        provider: frontend
+        repositories: [frontend-app]
+      - name: be1
+        title: Backend engineer
+        provider: backend
+        repositories: [backend-api]
+      - name: qa1
+        title: QA reviewer
+        provider: backend
+        repositories: [frontend-app, backend-api]
+      - name: scout1
+        title: Research and triage scout
+        provider: scout
+        repositories: [frontend-app, backend-api]

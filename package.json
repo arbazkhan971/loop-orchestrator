@@ -1,0 +1,56 @@
+{
+  "name": "loop-orchestrator",
+  "version": "0.1.0",
+  "description": "Configurable tmux-based AI agent team orchestrator for Claude Code, Codex, Gemini CLI, and custom terminal agents.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "loop": "./dist/cli.js",
+    "loop-orchestrator": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs",
+    "examples"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "validate": "npm run typecheck && npm run test && npm run build"
+  },
+  "keywords": [
+    "ai-agents",
+    "agent-orchestrator",
+    "tmux",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "multi-agent",
+    "agentic-coding",
+    "autonomous-coding-agents",
+    "ai-engineering-team",
+    "devtools",
+    "terminal-agents",
+    "workflow-automation",
+    "github-automation",
+    "software-engineering-agents"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "commander": "^14.0.1",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

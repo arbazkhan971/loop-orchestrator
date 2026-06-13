@@ -10,9 +10,10 @@ projects:
   - name: demo-product
     brief: brief.md
     workingDir: .
+    intelligence: PROJECT-INTELLIGENCE.md
     safetyMode: workspace-write
     providers:
-      planner:
+      planner-claude:
         type: claude
         model: claude-opus-4-8
         auth:
@@ -20,7 +21,7 @@ projects:
         dangerouslySkipPermissions: true
         args: []
         promptMode: interactive
-      frontend:
+      impl-claude:
         type: claude
         model: claude-sonnet-4-6
         auth:
@@ -28,85 +29,96 @@ projects:
         dangerouslySkipPermissions: true
         args: []
         promptMode: interactive
-      backend:
+      impl-codex:
         type: codex
-        model: gpt-5.4
+        model: gpt-5.1-codex
         effort: medium
         auth:
           mode: auto
         yolo: true
         args: []
         promptMode: interactive
-      scout:
+      scout-gemini:
         type: gemini
-        model: gemini-3.5-flash
+        model: gemini-3-pro
         auth:
           mode: auto
         args: []
         promptMode: interactive
-    repositories:
-      - name: frontend-app
-        path: ~/work/frontend-app
-        role: frontend
-        defaultBranch: main
-        protectedBranches: [main, production]
-      - name: backend-api
-        path: ~/work/backend-api
-        role: backend
-        defaultBranch: main
-        protectedBranches: [main, production]
     roles:
-      - name: cto
-        title: Technical lead and architecture reviewer
-        provider: planner
-        repositories: [frontend-app, backend-api]
-        responsibilities:
-          - Convert incoming issues into implementation plans and acceptance criteria.
-          - Review architecture, risk, rollout, and backward compatibility.
-        guardrails:
-          - Prefer small PRs with clear test evidence.
-      - name: fe1
-        title: Frontend engineer
-        provider: frontend
-        repositories: [frontend-app]
-        responsibilities:
-          - Implement accessible responsive UI changes.
-          - Run browser smoke tests and capture screenshots.
-      - name: be1
-        title: Backend engineer
-        provider: backend
-        repositories: [backend-api]
-        responsibilities:
-          - Implement APIs, migrations, and tests.
-          - Avoid destructive database operations.
-      - name: qa1
-        title: QA and release reviewer
-        provider: backend
-        repositories: [frontend-app, backend-api]
-        responsibilities:
-          - Verify acceptance criteria.
-          - Produce final merge readiness notes.
+      - name: pm
+        title: Product Manager
+        provider: planner-claude
+        sme: product-manager
+      - name: architect
+        title: Architect / CTO
+        provider: planner-claude
+        sme: architect
+      - name: fe
+        title: Frontend Engineer
+        provider: impl-claude
+        sme: frontend
+      - name: be
+        title: Backend Engineer
+        provider: impl-codex
+        sme: backend
+      - name: qa
+        title: QA Engineer
+        provider: impl-claude
+        sme: qa
+      - name: ct
+        title: Test Automation Engineer
+        provider: impl-codex
+        sme: ct
+      - name: security
+        title: Security Engineer
+        provider: impl-claude
+        sme: security
     loops:
       - name: delivery-loop
         cadenceMinutes: 30
-        maxIterations: 8
+        maxIterations: 6
+        idleSeconds: 20
+        pollSeconds: 8
+        orchestrator: pm
         stopWhen:
+          - all tasks done
           - tests pass
-          - pull request opened
-          - release reviewer approves
 `;
 }
 
 export function starterBrief(): string {
   return `# Demo Product Brief
 
-Build and maintain a full-stack web product using small, reviewable pull requests.
+You are an autonomous, self-organizing SME team building and maintaining a
+full-stack web product through small, reviewable, test-backed changes.
+
+## Mission
+
+Take a goal, decompose it on the shared board, and drive it to "done" with no
+human in the loop — plan, build, test, review, and verify against acceptance
+criteria until every task is complete and the test suite is green.
+
+## How the team operates
+
+- The PM owns the board: it turns the goal into user stories with explicit,
+  testable acceptance criteria and is the accept/reject authority.
+- The Architect decomposes work into independent, well-scoped tasks and owns
+  cross-cutting risk; it delegates rather than implements.
+- FE, BE, CT, and Security SMEs claim tasks from the board and deliver them to
+  their definition of done, leaving the codebase better than they found it.
+- QA verifies every acceptance criterion with evidence before anything is
+  marked merge-ready.
 
 ## Operating principles
 
-- Keep every task scoped to the requested issue.
+- Keep every task scoped to the goal; defer out-of-scope work, don't absorb it.
+- Read PROJECT-INTELLIGENCE.md first and reuse existing patterns, commands,
+  and conventions — match the project, don't reinvent it.
+- Prefer the smallest reversible change; keep API and UI changes
+  backward-compatible unless the task explicitly allows a break.
+- Never run destructive operations against real data or commit secrets.
+- Run the project's tests and include evidence before requesting review.
 - Do not mention private customer or repository names in public artifacts.
-- Prefer backward-compatible API and UI changes.
-- Run tests and include evidence before asking for review.
 `;
 }

@@ -33,6 +33,15 @@ export function safeLoadConfig(configPath: string | undefined, asJson: boolean):
   }
 }
 
+/** Load config if present, returning undefined instead of throwing when absent. */
+export function safeLoadConfigOptional(configPath: string | undefined): LoadedConfig | undefined {
+  try {
+    return loadConfig(configPath);
+  } catch {
+    return undefined;
+  }
+}
+
 export function output(data: unknown, asJson: boolean) {
   if (asJson) {
     console.log(JSON.stringify(data, null, 2));

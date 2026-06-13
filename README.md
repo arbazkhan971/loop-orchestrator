@@ -19,6 +19,26 @@ Loop Orchestrator helps you run a persistent AI software engineering team inside
 
 Use it as a lightweight open-source alternative to hard-coded agent scripts when you want **multi-agent coding workflows**, **terminal AI teams**, **Claude Code orchestration**, **Codex automation**, **Gemini CLI scouting**, and **tmux-based background execution**.
 
+## ⚡ Autonomous SME Team (3 commands)
+
+Point it at a repo, give it a goal, and watch a project-trained team of subject-matter experts deliver it — a Product Manager decomposes the goal, an Architect shapes it, and Frontend / Backend / QA / CT / Security SMEs (each on its best-fit model) implement, test, and review, coordinating through a shared blackboard.
+
+```bash
+loop learn                         # train the team on your codebase → PROJECT-INTELLIGENCE.md
+loop run "add rate limiting to the /login endpoint"   # decompose → assign → drive the loop
+loop monitor                       # single-screen mission control: board + every agent, live
+```
+
+How it works:
+
+- **Trained on your project.** `loop learn` scans the repo and writes `PROJECT-INTELLIGENCE.md` (stack, frameworks, layout, and the *real* test/build/lint commands). Every SME is grounded in it, so agents never invent commands.
+- **27 built-in SME roles.** Architect, Product Manager, Frontend, Backend, Full-stack, QA, CT/Test-Automation, DevOps, SRE, Security, DBA, Performance, Accessibility, Mobile, Data, ML, and more — each with a deep, discipline-specific system prompt and a best-fit provider (`loop roles` lists them). Set `sme: backend` on a role and it inherits the expert prompt.
+- **Real autonomy, not one-shot.** A planner agent decomposes the goal into assigned tasks on a shared JSONL blackboard (`.loop/board/`). The loop dispatches each task to the right SME, detects completion from the agent's exit code **and** structured output, then runs your project's test command as a verification gate before marking it done.
+- **tmux is the viewport; agents run headless.** Each SME gets a tiled pane so you can watch the whole team on one screen, but control flow spawns a fresh headless `claude -p` / `codex exec` / `gemini -p` child per task — reliable completion detection, no screen-scraping.
+- **Safe by default.** `loop run` is a dry-run that drives the board with no spend; add `--execute` to actually launch the agents.
+
+See [docs/autonomous-team.md](docs/autonomous-team.md) for the full guide.
+
 ## Why This Exists
 
 Most agent workflows are either one-off prompts or hard-coded scripts. Loop Orchestrator gives you a portable repo-level control plane:
@@ -322,15 +342,20 @@ loop stop issue-123
 ## Core Commands
 
 ```bash
-loop init                 # create loop.config.yaml and brief.md
+loop init                 # create loop.config.yaml and brief.md (autonomous SME team)
+loop learn                # scan the repo → PROJECT-INTELLIGENCE.md (trains the team)
+loop roles                # list the 27 built-in SME disciplines
+loop run "<goal>"         # decompose a goal, launch the team, drive the autonomy loop
+loop run "<goal>" --execute  # ...and actually launch the agent CLIs (default is dry-run)
+loop monitor              # single-screen mission control: board + every agent pane, live
 loop auth status          # inspect local provider CLI/API-key readiness
 loop auth configure --write # write detected local auth mode into config
 loop validate             # validate config
-loop start --run bug-42   # start role sessions in tmux
+loop start --run bug-42   # start role sessions in tmux (manual, prompt-only)
 loop status               # list loop sessions
 loop logs <session>       # capture recent tmux pane output
 loop stop bug-42          # kill sessions for a run
-loop dashboard            # open local web dashboard
+loop dashboard            # open local web dashboard (now includes the board)
 ```
 
 ## Common Workflows

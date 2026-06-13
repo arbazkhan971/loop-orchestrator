@@ -4,3 +4,8 @@ export * from "./auth.js";
 export * from "./providers.js";
 export * from "./prompts.js";
 export * from "./tmux.js";
+export * from "./board.js";
+export * from "./intelligence.js";
+export * from "./sme.js";
+export * from "./orchestrator.js";
+export * from "./monitor.js";

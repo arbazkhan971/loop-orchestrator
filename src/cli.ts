@@ -3,10 +3,19 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command } from "commander";
 import { configureLocalAuth, getAuthStatus } from "./auth.js";
-import { defaultRunId, output, safeLoadConfig, writeIfMissing } from "./cli/support.js";
+import { defaultRunId, output, safeLoadConfig, safeLoadConfigOptional, writeIfMissing } from "./cli/support.js";
 import { getProject } from "./config/load.js";
 import { startDashboard } from "./dashboard/server.js";
+import { writeIntelligence } from "./intelligence.js";
+import { discoverPanes, renderOnce, startMonitor } from "./monitor.js";
+import {
+  decomposeGoal,
+  prepareRun,
+  runAutonomyLoop,
+  writeRolePrompts
+} from "./orchestrator.js";
 import { packageVersion } from "./metadata.js";
+import { listSmeDisciplines } from "./sme.js";
 import { starterBrief, starterConfig } from "./starter.js";
 import { capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
 
@@ -29,6 +38,128 @@ program
     writeIfMissing(resolve(root, "brief.md"), starterBrief(), Boolean(options.force));
     mkdirSync(resolve(root, ".loop"), { recursive: true });
     console.log("Created loop.config.yaml, brief.md, and .loop/");
+  });
+
+program
+  .command("learn")
+  .description("scan the project and generate PROJECT-INTELLIGENCE.md (trains the team on the codebase)")
+  .option("-p, --project <name>", "project name")
+  .option("-d, --dir <path>", "directory to scan (defaults to the project workingDir or cwd)")
+  .action((options) => {
+    const opts = program.opts();
+    let scanDir = options.dir ? resolve(options.dir) : process.cwd();
+    let outPath = resolve(scanDir, "PROJECT-INTELLIGENCE.md");
+    // If a config exists, honor its workingDir + intelligence path.
+    const loaded = safeLoadConfigOptional(opts.config);
+    if (loaded && !options.dir) {
+      const project = getProject(loaded, options.project);
+      scanDir = resolve(loaded.rootDir, project.workingDir);
+      outPath = resolve(scanDir, project.intelligence);
+    }
+    const intel = writeIntelligence(scanDir, outPath);
+    output(
+      {
+        wrote: outPath,
+        name: intel.name,
+        languages: intel.languages,
+        frameworks: intel.frameworks,
+        commands: intel.commands
+      },
+      opts.json
+    );
+  });
+
+program
+  .command("run")
+  .argument("<goal>", "the goal for the autonomous team to deliver")
+  .description("decompose a goal, launch the SME team in tmux, and drive the autonomy loop")
+  .option("-p, --project <name>", "project name")
+  .option("-r, --run <id>", "run id", defaultRunId())
+  .option("--execute", "actually launch agent CLIs (default is a safe dry-run that drives the board)")
+  .option("--max-iterations <n>", "override loop maxIterations")
+  .action(async (goal, options) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    const project = getProject(loaded, options.project);
+
+    const ctx = prepareRun(loaded, project, options.run, goal);
+    if (options.maxIterations) ctx.loop.maxIterations = Number(options.maxIterations);
+
+    // Make sure the team is trained on the project before planning.
+    try {
+      writeIntelligence(ctx.cwd, resolve(ctx.cwd, project.intelligence));
+    } catch {
+      // non-fatal — prompts degrade gracefully without intelligence
+    }
+
+    const roleFiles = writeRolePrompts(ctx);
+    const tasks = decomposeGoal(ctx);
+
+    if (!opts.json) {
+      console.log(`\n🛰  Run ${ctx.runId} · ${project.name}`);
+      console.log(`Goal: ${goal}`);
+      console.log(`Decomposed into ${tasks.length} task(s) across ${project.roles.length} SME(s).`);
+      console.log(`Monitor all agents on one screen:  loop monitor --run ${ctx.runId}\n`);
+    }
+
+    const reports = await runAutonomyLoop(ctx, roleFiles, {
+      execute: Boolean(options.execute),
+      onIteration: opts.json
+        ? undefined
+        : (r) => {
+            const byStatus = Object.entries(r.summary.byStatus)
+              .map(([s, n]) => `${s}:${n}`)
+              .join(" ");
+            console.log(`  iteration ${r.iteration} · dispatched ${r.dispatched.length} · ${byStatus}`);
+          }
+    });
+
+    output(
+      {
+        run: ctx.runId,
+        project: project.name,
+        session: ctx.session,
+        tasks: tasks.length,
+        iterations: reports.length,
+        final: reports[reports.length - 1]?.summary ?? null,
+        monitor: `loop monitor --run ${ctx.runId}`
+      },
+      opts.json
+    );
+  });
+
+program
+  .command("monitor")
+  .description("single-screen mission control: board + every agent pane, live")
+  .option("-p, --project <name>", "project name")
+  .option("-r, --run <id>", "run id to monitor")
+  .option("--once", "render one frame and exit (for CI / piping)")
+  .option("--interval <ms>", "refresh interval in ms", "1500")
+  .action((options) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    const project = getProject(loaded, options.project);
+    const runId = options.run ?? defaultRunId();
+    const boardDir = resolve(loaded.rootDir, loaded.config.defaults.runDir, runId, "board");
+    const namespace = loaded.config.defaults.namespace;
+    const session = `${namespace}-${project.name}-${runId}-team`.replace(/[^a-zA-Z0-9_.:-]/g, "-").slice(0, 120);
+    const panes = discoverPanes(session);
+    const monitorOpts = { boardDir, session, panes, intervalMs: Number(options.interval) };
+    if (options.once) {
+      console.log(renderOnce(monitorOpts));
+      return;
+    }
+    startMonitor(monitorOpts);
+  });
+
+program
+  .command("roles")
+  .description("list the built-in SME disciplines available for `sme:` in a role")
+  .action(() => {
+    const opts = program.opts();
+    output({ disciplines: listSmeDisciplines() }, opts.json);
   });
 
 program

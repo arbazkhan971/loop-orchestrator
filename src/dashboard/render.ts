@@ -14,6 +14,15 @@ export function renderDashboard(projectName: string): string {
     button { border: 1px solid #3b4552; background: #202733; color: #e6edf3; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
     pre { white-space: pre-wrap; max-height: 320px; overflow: auto; background: #0b0f14; padding: 12px; border-radius: 6px; }
     .muted { color: #9aa4b2; }
+    section.board { margin: 0 24px; }
+    table.board { width: 100%; border-collapse: collapse; font-size: 14px; }
+    table.board th, table.board td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #29313a; vertical-align: top; }
+    table.board th { color: #9aa4b2; font-weight: 600; }
+    .status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #202733; border: 1px solid #3b4552; }
+    .status-done { background: #133a23; border-color: #1f6f3e; color: #7ee2a8; }
+    .status-blocked, .status-rejected { background: #3a1717; border-color: #7a2b2b; color: #f3a9a9; }
+    .status-needs-review, .status-in-progress, .status-claimed { background: #2c2a13; border-color: #6f661f; color: #e8dc8a; }
+    .tag { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #9aa4b2; }
   </style>
 </head>
 <body>
@@ -24,9 +33,54 @@ export function renderDashboard(projectName: string): string {
     </div>
     <button onclick="refresh()">Refresh</button>
   </header>
+  <section class="board card" style="margin: 24px;">
+    <h2 style="margin-top: 0;">Board</h2>
+    <div id="board-summary" class="muted">Loading board…</div>
+    <div id="board"></div>
+  </section>
   <main id="sessions"></main>
   <script>
+    function esc(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+      });
+    }
+    async function refreshBoard() {
+      const summary = document.getElementById('board-summary');
+      const root = document.getElementById('board');
+      let data;
+      try {
+        data = await fetch('/api/board').then(r => r.json());
+      } catch (err) {
+        summary.textContent = 'Board unavailable.';
+        root.innerHTML = '';
+        return;
+      }
+      const views = (data && data.views) || [];
+      if (!views.length) {
+        summary.textContent = 'No board tasks yet.';
+        root.innerHTML = '';
+        return;
+      }
+      const byStatus = (data && data.byStatus) || {};
+      const parts = Object.keys(byStatus).map(function (k) { return esc(k) + ': ' + byStatus[k]; });
+      summary.innerHTML = esc(data.total) + ' task(s)' + (parts.length ? ' — ' + parts.join(', ') : '');
+      let rows = '';
+      for (const t of views) {
+        const status = String(t.status || 'open');
+        rows += '<tr>'
+          + '<td class="tag">' + esc(t.id) + '</td>'
+          + '<td>' + esc(t.title) + '</td>'
+          + '<td class="tag">' + esc(t.claimedBy || t.assignee) + '</td>'
+          + '<td><span class="status status-' + esc(status) + '">' + esc(status) + '</span></td>'
+          + '</tr>';
+      }
+      root.innerHTML = '<table class="board"><thead><tr>'
+        + '<th>ID</th><th>Title</th><th>Assignee</th><th>Status</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
     async function refresh() {
+      refreshBoard();
       const data = await fetch('/api/status').then(r => r.json());
       const root = document.getElementById('sessions');
       root.innerHTML = '';

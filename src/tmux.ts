@@ -46,6 +46,19 @@ export function capturePane(session: string, lines = 160): string {
   return runTmux(["capture-pane", "-pt", session, "-S", `-${lines}`]);
 }
 
+// Returns null when the session is attachable, or a helpful error message
+// listing the live sessions when it is not. Pure so it can be unit-tested.
+export function attachError(session: string, liveSessions: string[]): string | null {
+  if (liveSessions.includes(session)) return null;
+  const list = liveSessions.length ? liveSessions.join(", ") : "(none running)";
+  return `No session "${session}". Live sessions: ${list}`;
+}
+
+export function attachSession(session: string): void {
+  const result = spawnSync("tmux", ["attach", "-t", session], { stdio: "inherit" });
+  if (result.status !== 0) throw new Error(`Failed to attach to ${session}.`);
+}
+
 export function stopRun(namespace: string, runId: string): string[] {
   const killed: string[] = [];
   for (const session of listSessions(namespace)) {
@@ -84,6 +97,21 @@ export function startProjectSessions(
   }
 
   return infos;
+}
+
+// Launch a single role session, creating the run prompt directory on demand.
+// Used by the workflow engine, which starts stages one at a time as their
+// dependencies complete rather than all up front.
+export function launchRoleSession(
+  loaded: LoadedConfig,
+  project: ProjectConfig,
+  role: RoleConfig,
+  runId: string,
+  execute: boolean
+): SessionInfo {
+  const promptDir = resolve(loaded.rootDir, loaded.config.defaults.runDir, runId, "prompts");
+  mkdirSync(promptDir, { recursive: true });
+  return startRoleSession(loaded, project, role, runId, promptDir, execute);
 }
 
 function startRoleSession(

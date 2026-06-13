@@ -5,7 +5,11 @@ import { Command } from "commander";
 import { configureLocalAuth, getAuthStatus } from "./auth.js";
 import { loadConfig, getProject } from "./config/load.js";
 import { startDashboard } from "./dashboard/server.js";
-import { capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
+import { validateConfig, validateWorkflow } from "./config/validate.js";
+import { evaluateDoctor, gatherDoctor } from "./doctor.js";
+import { attachError, attachSession, capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
+import { listRuns, readManifest } from "./workflow/manifest.js";
+import { createTmuxRunner, manifestPath, realClock, runWorkflow, writeWorkflowManifest } from "./workflow/run.js";
 
 const program = new Command();
 
@@ -35,7 +39,30 @@ program
     const opts = program.opts();
     const loaded = safeLoadConfig(opts.config, opts.json);
     if (!loaded) return;
+    const errors = validateConfig(loaded.config);
+    if (errors.length) {
+      output({ ok: false, config: loaded.path, errors }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
     output({ ok: true, config: loaded.path, projects: loaded.config.projects.map((project) => project.name) }, opts.json);
+  });
+
+program
+  .command("doctor")
+  .description("check tmux, provider CLIs, auth, and config before a run")
+  .option("-p, --project <name>", "project name")
+  .action((options) => {
+    const opts = program.opts();
+    let loaded: ReturnType<typeof loadConfig> | undefined;
+    try {
+      loaded = loadConfig(opts.config);
+    } catch {
+      loaded = undefined;
+    }
+    const report = evaluateDoctor(gatherDoctor(loaded, options.project));
+    output(report, opts.json);
+    if (!report.ok) process.exitCode = 1;
   });
 
 const auth = program.command("auth").description("inspect and configure local provider authentication");
@@ -94,6 +121,58 @@ program
   });
 
 program
+  .command("run")
+  .description("run a dynamic workflow: launch stages as their dependencies complete")
+  .option("-p, --project <name>", "project name")
+  .option("-w, --workflow <name>", "workflow name")
+  .option("-r, --run <id>", "run id", defaultRunId())
+  .option("--execute", "launch configured agent commands instead of prompt-only shells")
+  .option("--once", "run a single tick (launch ready stages) and exit")
+  .action(async (options) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    const project = getProject(loaded, options.project);
+
+    const workflow = resolveWorkflow(project, options.workflow);
+    if (!workflow) {
+      const names = project.workflows.map((item) => item.name).join(", ") || "(none defined)";
+      output({ ok: false, error: `Workflow not found: ${options.workflow ?? "(missing)"}. Available: ${names}` }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+
+    const problems = validateWorkflow(project, workflow);
+    if (problems.length) {
+      output({ ok: false, workflow: workflow.name, errors: problems }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+
+    const runner = createTmuxRunner(loaded, project, options.run, Boolean(options.execute));
+    const finalState = await runWorkflow(
+      workflow,
+      { ...runner, onTick: (state) => writeWorkflowManifest(loaded, project, options.run, state) },
+      realClock,
+      { maxTicks: options.once ? 1 : undefined }
+    );
+
+    output(
+      {
+        run: options.run,
+        project: project.name,
+        workflow: workflow.name,
+        outcome: finalState.outcome ?? "in-progress",
+        done: finalState.done,
+        iteration: finalState.iteration,
+        manifest: manifestPath(loaded, options.run),
+        stages: finalState.stages
+      },
+      opts.json
+    );
+  });
+
+program
   .command("status")
   .description("list loop tmux sessions")
   .action(() => {
@@ -110,6 +189,50 @@ program
   .description("print captured logs for a session")
   .action((session, options) => {
     console.log(capturePane(session, Number(options.lines)));
+  });
+
+program
+  .command("attach")
+  .argument("<session>", "tmux session name")
+  .description("attach to a running loop session")
+  .action((session) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    const namespace = loaded?.config.defaults.namespace ?? "loop";
+    const error = attachError(session, listSessions(namespace));
+    if (error) {
+      output({ ok: false, error }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+    attachSession(session);
+  });
+
+program
+  .command("runs")
+  .description("list past and in-flight workflow runs")
+  .action(() => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    output({ runs: listRuns(loaded) }, opts.json);
+  });
+
+program
+  .command("show")
+  .argument("<run>", "run id")
+  .description("show the workflow manifest for a run")
+  .action((run) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    const manifest = readManifest(loaded, run);
+    if (!manifest) {
+      output({ ok: false, error: `No workflow manifest for run "${run}".` }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+    output(manifest, opts.json);
   });
 
 program
@@ -188,6 +311,11 @@ function writeIfMissing(path: string, content: string, force: boolean) {
     return;
   }
   writeFileSync(path, content);
+}
+
+function resolveWorkflow(project: ReturnType<typeof getProject>, name?: string) {
+  if (!name) return project.workflows.length === 1 ? project.workflows[0] : undefined;
+  return project.workflows.find((workflow) => workflow.name === name);
 }
 
 function defaultRunId(): string {
@@ -292,6 +420,34 @@ projects:
           - tests pass
           - pull request opened
           - release reviewer approves
+    workflows:
+      - name: delivery
+        cadenceSeconds: 30
+        maxIterations: 50
+        stages:
+          - name: plan
+            role: cto
+            completeWhen:
+              - "pane-matches:PLAN COMPLETE"
+          - name: implement-backend
+            role: be1
+            dependsOn: [plan]
+            completeWhen:
+              - pr-opened
+              - tests-pass
+            failWhen:
+              - tests-fail
+          - name: implement-frontend
+            role: fe1
+            dependsOn: [plan]
+            completeWhen:
+              - pr-opened
+          - name: qa
+            role: qa1
+            dependsOn: [implement-backend, implement-frontend]
+            completeWhen:
+              - review-approved
+              - "pane-matches:MERGE READY"
 `;
 }
 

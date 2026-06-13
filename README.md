@@ -57,6 +57,14 @@ $ loop run "Add subtract(a,b) and multiply(a,b) to math.js, each with a test" --
 
 See [docs/autonomous-team.md](docs/autonomous-team.md) for the full guide.
 
+### Live dashboard
+
+`loop dashboard` opens a local mission-control view of the shared board — every task, its assigned SME, and its status — updating as the team works. (`loop monitor` is the single-screen terminal version.)
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arbazkhan971/loop-orchestrator/main/assets/dashboard.png" alt="Loop Orchestrator dashboard showing the autonomous SME team's task board" width="900">
+</p>
+
 ## Why This Exists
 
 Most agent workflows are either one-off prompts or hard-coded scripts. Loop Orchestrator gives you a portable repo-level control plane:

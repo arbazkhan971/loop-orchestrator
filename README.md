@@ -45,6 +45,16 @@ How it works:
 - **True parallelism.** Each role works in its own **git worktree** on its own branch, so SMEs run concurrently (`maxParallel`) without clobbering each other; accepted work merges back to main through the critic gate.
 - **Budgeted.** Per-task spend is tracked to `.loop/board/costs.jsonl`; the run stops at `budgetUsd`.
 
+**Proven end-to-end.** A real run of two engineer SMEs (Claude) implementing two functions *in parallel in isolated git worktrees*, reviewed by an independent QA critic:
+
+```
+$ loop run "Add subtract(a,b) and multiply(a,b) to math.js, each with a test" --execute
+🛰  Run … · sandbox — decomposed into 3 tasks across 4 SMEs
+  [done] t1 (be) Accepted by qa. Merged to main. math.js exports subtract(a, b) …
+  [done] t2 (be) Accepted by qa. Merged to main. math.js exports multiply(a, b) …
+# both worktree branches merged to main → node --test → 5/5 pass → $0.56 (budget $2.00)
+```
+
 See [docs/autonomous-team.md](docs/autonomous-team.md) for the full guide.
 
 ## Why This Exists

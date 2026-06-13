@@ -55,6 +55,23 @@ projects:
       projects: ["demo"]
     });
   });
+
+  it("prints JSON setup guidance when no config is found", () => {
+    const root = mkdtempSync(join(tmpdir(), "loop-cli-missing-config-"));
+
+    const result = runLoop(["--json", "validate"], root);
+
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      ok: false,
+      error: "No loop.config.yaml found.",
+      nextSteps: [
+        "Run `loop init` in this repo.",
+        "Run `loop auth status` again.",
+        "Run `loop auth configure --write` to store detected local provider metadata."
+      ]
+    });
+  });
 });
 
 function runLoop(args: string[], cwd: string) {

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command } from "commander";
 import { configureLocalAuth, getAuthStatus } from "./auth.js";
-import { loadConfig, getProject } from "./config/load.js";
+import { defaultRunId, output, safeLoadConfig, writeIfMissing } from "./cli/support.js";
+import { getProject } from "./config/load.js";
 import { startDashboard } from "./dashboard/server.js";
 import { starterBrief, starterConfig } from "./starter.js";
 import { capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
@@ -137,62 +138,3 @@ program
   });
 
 program.parse();
-
-function safeLoadConfig(configPath: string | undefined, asJson: boolean): ReturnType<typeof loadConfig> | undefined {
-  try {
-    return loadConfig(configPath);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("No loop.config.yaml")) {
-      const help = {
-        ok: false,
-        error: "No loop.config.yaml found.",
-        nextSteps: [
-          "Run `loop init` in this repo.",
-          "Run `loop auth status` again.",
-          "Run `loop auth configure --write` to store detected local provider metadata."
-        ]
-      };
-      if (asJson) {
-        console.log(JSON.stringify(help, null, 2));
-      } else {
-        console.error("No loop.config.yaml found.");
-        console.error("");
-        console.error("Run:");
-        console.error("  loop init");
-        console.error("  loop auth status");
-        console.error("  loop auth configure --write");
-      }
-      process.exitCode = 1;
-      return undefined;
-    }
-    throw error;
-  }
-}
-
-function output(data: unknown, asJson: boolean) {
-  if (asJson) {
-    console.log(JSON.stringify(data, null, 2));
-    return;
-  }
-  console.log(formatHuman(data));
-}
-
-function formatHuman(data: unknown): string {
-  if (typeof data !== "object" || data === null) return String(data);
-  return JSON.stringify(data, null, 2);
-}
-
-function writeIfMissing(path: string, content: string, force: boolean) {
-  if (existsSync(path) && !force) {
-    console.log(`Skipped ${path}; already exists.`);
-    return;
-  }
-  writeFileSync(path, content);
-}
-
-function defaultRunId(): string {
-  const date = new Date();
-  const stamp = date.toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-  return `run-${stamp}`;
-}

@@ -1,0 +1,30 @@
+# Changelog
+
+## 0.2.0
+
+### Autonomous SME team
+
+Loop Orchestrator goes from one-shot tmux prompting to an **autonomous multi-agent engineering team** that drives Claude Code, Codex, and Gemini CLI as project-trained subject-matter experts.
+
+**New commands**
+
+- `loop learn` — scans the repo and writes `PROJECT-INTELLIGENCE.md` (stack, frameworks, layout, and the real test/build/lint commands), injected into every agent prompt so the team is "trained" on your codebase.
+- `loop run "<goal>"` — a planner agent decomposes the goal into assigned tasks on a shared blackboard, then the autonomy loop dispatches each task to the right SME, detects completion from exit code + structured output, and gates "done" on the project's test command. Dry-run by default; `--execute` launches the agents.
+- `loop monitor` — single-screen mission control: the board plus a live tail of every agent's tmux pane.
+- `loop roles` — list the 27 built-in SME disciplines.
+
+**New capabilities**
+
+- **27-discipline SME role library** (architect, PM, frontend, backend, full-stack, QA, CT/test-automation, devops, SRE, security, DBA, performance, accessibility, mobile, data, ML, and more), each with a deep system prompt and a best-fit provider. Set `sme: <discipline>` on a role to inherit the expert prompt.
+- **Shared blackboard** — append-only JSONL (`.loop/board/`) with first-claim-wins coordination and `dependsOn` task gating.
+- **Headless per-task execution** — tmux is the human viewport (tiled panes); control flow spawns a fresh headless `claude -p` / `codex exec` / `gemini -p` child per task for reliable completion detection.
+- **Web dashboard** now includes a `/api/board` endpoint and a Board view.
+
+**Config additions**
+
+- `role.sme`, `project.intelligence`, and `loop.orchestrator` / `loop.idleSeconds` / `loop.pollSeconds`.
+- `loop init` now scaffolds a validated 7-SME team.
+
+## 0.1.3
+
+- Initial public release: tmux-based role sessions, per-role provider/model selection, project briefs, prompt-only and execute modes, local dashboard, provider auth detection.

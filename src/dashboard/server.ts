@@ -1,25 +1,50 @@
-import { createServer, ServerResponse } from "node:http";
+import { createServer, type Server, type ServerResponse } from "node:http";
 import { LoadedConfig, getProject } from "../config/load.js";
-import { capturePane, listSessions } from "../tmux.js";
+import type { ProjectConfig } from "../config/schema.js";
+import { capturePane as captureTmuxPane, listSessions as listTmuxSessions } from "../tmux.js";
 import { renderDashboard } from "./render.js";
+
+export type DashboardServerOptions = {
+  project: ProjectConfig;
+  namespace: string;
+  port: number;
+  listSessions?: (namespace: string) => string[];
+  capturePane?: (session: string, lines?: number) => string;
+};
 
 export function startDashboard(loaded: LoadedConfig, options: { project?: string; port?: number }) {
   const project = getProject(loaded, options.project);
   const namespace = loaded.config.defaults.namespace;
   const port = options.port ?? loaded.config.defaults.dashboardPort;
+  const server = createDashboardServer({
+    project,
+    namespace,
+    port,
+    listSessions: listTmuxSessions,
+    capturePane: captureTmuxPane
+  });
 
-  const server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+  server.listen(port, () => {
+    console.log(`Loop dashboard: http://localhost:${port}`);
+  });
+}
+
+export function createDashboardServer(options: DashboardServerOptions): Server {
+  const listSessions = options.listSessions ?? listTmuxSessions;
+  const capturePane = options.capturePane ?? captureTmuxPane;
+
+  return createServer((req, res) => {
+    const url = new URL(req.url ?? "/", `http://localhost:${options.port}`);
 
     if (url.pathname === "/api/status") {
       return json(res, {
-        project: project.name,
-        sessions: listSessions(namespace).filter((session) => session.includes(`-${project.name}-`))
+        project: options.project.name,
+        sessions: listSessions(options.namespace).filter((session) => session.includes(`-${options.project.name}-`))
       });
     }
 
     if (url.pathname === "/api/config") {
-      return json(res, project);
+      return json(res, options.project);
     }
 
     if (url.pathname === "/api/logs") {
@@ -29,11 +54,7 @@ export function startDashboard(loaded: LoadedConfig, options: { project?: string
     }
 
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(renderDashboard(project.name));
-  });
-
-  server.listen(port, () => {
-    console.log(`Loop dashboard: http://localhost:${port}`);
+    res.end(renderDashboard(options.project.name));
   });
 }
 

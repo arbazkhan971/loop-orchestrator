@@ -9,3 +9,6 @@ export * from "./intelligence.js";
 export * from "./sme.js";
 export * from "./orchestrator.js";
 export * from "./monitor.js";
+export * from "./git.js";
+export * from "./cost.js";
+export * from "./worktree.js";

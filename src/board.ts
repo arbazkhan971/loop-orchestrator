@@ -32,7 +32,8 @@ export type TaskStatus =
   | "needs-review"
   | "blocked"
   | "done"
-  | "rejected";
+  | "rejected"
+  | "escalated";
 
 export type BoardTask = {
   id: string;
@@ -46,6 +47,8 @@ export type BoardTask = {
   dependsOn: string[];
   priority: number;
   createdAt: string;
+  /** Files this task expects to touch — used for ownership/contention checks. */
+  files?: string[];
 };
 
 export type BoardEvent = {
@@ -69,6 +72,8 @@ export type TaskView = BoardTask & {
   claimedBy?: string;
   lastSummary?: string;
   lastUpdate?: string;
+  /** How many times this task has failed (blocked/rejected) — drives the repair loop. */
+  attempts: number;
 };
 
 export type BoardPaths = {
@@ -154,7 +159,7 @@ export function foldBoard(boardDir: string): TaskView[] {
   const views = new Map<string, TaskView>();
 
   for (const task of tasks) {
-    views.set(task.id, { ...task, status: "open" });
+    views.set(task.id, { ...task, status: "open", attempts: 0 });
   }
 
   for (const event of events) {
@@ -168,6 +173,11 @@ export function foldBoard(boardDir: string): TaskView[] {
       }
     } else {
       view.status = event.status;
+    }
+    // Every failure event increments the attempt counter so the repair loop can
+    // bound retries and escalate instead of looping forever.
+    if (event.status === "blocked" || event.status === "rejected") {
+      view.attempts += 1;
     }
     view.lastSummary = event.summary ?? view.lastSummary;
     view.lastUpdate = event.ts;
@@ -183,10 +193,53 @@ export function openTasksFor(boardDir: string, role: string): TaskView[] {
   );
 }
 
+/**
+ * Tasks assigned to a role that failed but still have repair attempts left. These are
+ * re-dispatched (with the failure context injected) so the team self-heals instead of
+ * stranding blocked/rejected work.
+ */
+export function retryableTasksFor(boardDir: string, role: string, maxRepairs: number): TaskView[] {
+  return foldBoard(boardDir).filter(
+    (task) =>
+      task.assignee === role &&
+      (task.status === "blocked" || task.status === "rejected") &&
+      task.attempts < maxRepairs
+  );
+}
+
+const TERMINAL: TaskStatus[] = ["done", "rejected", "escalated"];
+
 export function isComplete(boardDir: string): boolean {
   const views = foldBoard(boardDir);
   if (!views.length) return false;
-  return views.every((task) => task.status === "done" || task.status === "rejected");
+  return views.every((task) => TERMINAL.includes(task.status));
+}
+
+/**
+ * Context an SME should see before working a task: messages addressed to it and the
+ * results of its upstream dependencies. This is what makes coordination real — it flips
+ * the message log from write-only to load-bearing and lets `dependsOn` carry artifacts,
+ * not just ordering.
+ */
+export function gatherContext(boardDir: string, role: string, task: BoardTask, limit = 8): string {
+  const inbox = readMessages(boardDir)
+    .filter((m) => m.to === role || m.to === "*")
+    .filter((m) => !m.taskId || m.taskId === task.id || task.dependsOn.includes(m.taskId))
+    .slice(-limit);
+  const upstream = foldBoard(boardDir).filter((t) => task.dependsOn.includes(t.id));
+
+  const sections: string[] = [];
+  if (inbox.length) {
+    sections.push("## Inbox (messages for you)");
+    sections.push(...inbox.map((m) => `- from ${m.from}: ${m.body}`));
+  }
+  if (upstream.length) {
+    sections.push("## Upstream results (your dependencies)");
+    sections.push(
+      ...upstream.map((t) => `- ${t.id} (${t.assignee}, ${t.status}): ${t.lastSummary ?? "—"}`)
+    );
+  }
+  return sections.join("\n");
 }
 
 export function boardSummary(boardDir: string): {

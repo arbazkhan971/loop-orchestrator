@@ -81,6 +81,11 @@ projects:
         idleSeconds: 20
         pollSeconds: 8
         orchestrator: pm
+        reviewer: qa          # independent critic that reviews diffs and can reject
+        maxRepairs: 2          # failed tasks are retried with error context before escalating
+        maxParallel: 2         # SMEs work concurrently (each in its own git worktree)
+        isolate: true          # git-worktree isolation so parallel edits never collide
+        budgetUsd: 0           # set a USD cap to bound autonomous spend (0 = unlimited)
         stopWhen:
           - all tasks done
           - tests pass

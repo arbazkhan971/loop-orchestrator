@@ -3,21 +3,41 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   addEvent,
+  addMessage,
   addTask,
   BoardTask,
   boardSummary,
   foldBoard,
+  gatherContext,
   initBoard,
   isComplete,
   openTasksFor,
+  retryableTasksFor,
   TaskView
 } from "./board.js";
 import { LoadedConfig } from "./config/load.js";
 import { LoopConfig, ProjectConfig, RoleConfig } from "./config/schema.js";
+import { initCostLedger, parseCost, recordCost, totalSpend } from "./cost.js";
+import {
+  discoverTestFiles,
+  hashFiles,
+  headSha,
+  hasChanges,
+  isGitRepo,
+  revertWorkingTree,
+  workingDiff
+} from "./git.js";
 import { analyzeProject, writeIntelligence } from "./intelligence.js";
 import { buildHeadlessCommand, commandToShell, shellQuote } from "./providers.js";
 import { buildRolePrompt } from "./prompts.js";
 import { ensureWindow, paneTitle, runCommandInPane, sessionName } from "./tmux.js";
+import {
+  cleanupRunWorktrees,
+  ensureWorktree,
+  mergeWorktree,
+  Worktree,
+  worktreesSupported
+} from "./worktree.js";
 
 export type RunContext = {
   loaded: LoadedConfig;
@@ -30,6 +50,8 @@ export type RunContext = {
   boardDir: string;
   promptDir: string;
   session: string;
+  /** role -> isolated worktree, populated when isolation is enabled. */
+  worktrees?: Record<string, Worktree>;
 };
 
 export function nowIso(): string {
@@ -250,33 +272,117 @@ async function dispatchTask(
   role: RoleConfig,
   task: TaskView,
   paneId: string,
-  verifyCmd: string | undefined
+  verifyCmd: string | undefined,
+  workCwd: string = ctx.cwd
 ): Promise<void> {
   const provider = ctx.project.providers[role.provider];
   const promptFile = resolve(ctx.promptDir, `${role.name}.md`);
+  const isRepair = task.attempts > 0 || task.status === "blocked" || task.status === "rejected";
 
   addEvent(ctx.boardDir, { ts: nowIso(), role: role.name, taskId: task.id, status: "claimed" });
 
+  // #3 Snapshot the world BEFORE the agent touches it: HEAD for diff/revert, test-file
+  // hashes to detect reward-hacking, and the baseline test result so we only revert true
+  // regressions (not a suite that was already red). All scoped to this role's worktree.
+  const git = isGitRepo(workCwd);
+  const baseSha = git ? headSha(workCwd) : undefined;
+  const testFiles = git ? discoverTestFiles(workCwd) : [];
+  const testHashBefore = git ? hashFiles(workCwd, testFiles) : "";
+  const baselineGreen = verifyCmd ? runVerify(workCwd, verifyCmd).ok : true;
+
+  // #4 Give the SME the inbox + upstream results so coordination is real, and #2 inject
+  // the prior failure so a repair attempt doesn't repeat the same mistake.
+  const context = gatherContext(ctx.boardDir, role.name, task);
   const taskText = [
-    `TASK ${task.id}: ${task.title}`,
+    isRepair ? `REPAIR ATTEMPT ${task.attempts + 1} for TASK ${task.id}` : `TASK ${task.id}: ${task.title}`,
     task.description,
     ``,
     `Acceptance criteria:`,
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
+    context ? `\n${context}` : "",
+    isRepair && task.lastSummary
+      ? `\nPREVIOUS ATTEMPT FAILED: ${task.lastSummary}\nDo NOT repeat the failed approach. Fix the root cause.`
+      : "",
     ``,
+    `Do not modify test files or CI config to make checks pass — that is treated as tampering and will be rejected.`,
     `When finished, append your done/blocked/needs-review event to .loop/board/events.jsonl as instructed in your role prompt.`
   ].join("\n");
 
   const cmd = buildHeadlessCommand(provider, taskText, promptFile);
-  // Show the command in the watching pane, then run the headless child ourselves so we
-  // own exit-code detection (the pane is the viewport; the child is the source of truth).
-  runCommandInPane(paneId, `# ${role.name} → ${task.id}: ${task.title}`);
+  runCommandInPane(paneId, `# ${role.name} → ${task.id}: ${task.title}${isRepair ? " (repair)" : ""}`);
 
-  const ok = await runHeadlessChild(ctx, cmd.command, cmd.args, cmd.env, paneId);
+  const result = await runHeadlessChild(ctx, cmd.command, cmd.args, cmd.env, paneId, workCwd);
 
-  let verified = ok;
-  if (ok && verifyCmd) {
-    verified = runVerify(ctx.cwd, verifyCmd);
+  // #7 Record whatever spend the agent reported.
+  const cost = parseCost(result.stdout);
+  if (cost.usd > 0 || cost.outputTokens) {
+    recordCost(ctx.boardDir, {
+      ts: nowIso(),
+      role: role.name,
+      taskId: task.id,
+      usd: cost.usd,
+      inputTokens: cost.inputTokens,
+      outputTokens: cost.outputTokens
+    });
+  }
+
+  // #3 Reward-hacking guard: if the agent altered its own grader, hard-block regardless
+  // of what the suite now reports.
+  if (git && testFiles.length && hashFiles(workCwd, testFiles) !== testHashBefore) {
+    revertWorkingTree(workCwd);
+    addEvent(ctx.boardDir, {
+      ts: nowIso(),
+      role: role.name,
+      taskId: task.id,
+      status: "blocked",
+      summary: "Rejected: agent modified test/CI files (tampering with the grader)."
+    });
+    return;
+  }
+
+  if (!result.ok) {
+    if (git) revertWorkingTree(workCwd);
+    addEvent(ctx.boardDir, {
+      ts: nowIso(),
+      role: role.name,
+      taskId: task.id,
+      status: "blocked",
+      summary: `Agent failed: ${failureTail(result.stdout, result.stderr) || "exited non-zero / no result"}`
+    });
+    return;
+  }
+
+  if (git && !hasChanges(workCwd)) {
+    addEvent(ctx.boardDir, {
+      ts: nowIso(),
+      role: role.name,
+      taskId: task.id,
+      status: "blocked",
+      summary: "Agent reported success but made no changes to the working tree."
+    });
+    return;
+  }
+
+  let verifyOutput = "";
+  let verified = true;
+  if (verifyCmd) {
+    const v = runVerify(workCwd, verifyCmd);
+    verified = v.ok;
+    verifyOutput = v.output;
+  }
+
+  // #3 Revert a regression: only when the suite was green before and is red now. Never
+  // let a regression persist on disk for the next task to inherit.
+  if (baselineGreen && !verified) {
+    if (git) revertWorkingTree(workCwd);
+    addEvent(ctx.boardDir, {
+      ts: nowIso(),
+      role: role.name,
+      taskId: task.id,
+      status: "blocked",
+      summary: `Verification (${verifyCmd}) regressed — reverted. ${failureTail(verifyOutput, "")}`
+    });
+    return;
   }
 
   addEvent(ctx.boardDir, {
@@ -286,22 +392,23 @@ async function dispatchTask(
     status: verified ? "needs-review" : "blocked",
     summary: verified
       ? `Implemented; ${verifyCmd ? "verification passed" : "no verify cmd"}.`
-      : ok
-        ? `Implemented but verification (${verifyCmd}) failed.`
-        : `Agent exited non-zero or produced no result.`
+      : `Implemented but verification (${verifyCmd}) failed. ${failureTail(verifyOutput, "")}`
   });
 }
+
+export type ChildResult = { ok: boolean; stdout: string; stderr: string; code: number | null };
 
 function runHeadlessChild(
   ctx: RunContext,
   command: string,
   args: string[],
   env: Record<string, string>,
-  paneId: string
-): Promise<boolean> {
+  paneId: string,
+  cwd: string = ctx.cwd
+): Promise<ChildResult> {
   return new Promise((resolvePromise) => {
     const child = spawn(command, args, {
-      cwd: ctx.cwd,
+      cwd,
       env: { ...process.env, ...env }
     });
     let out = "";
@@ -320,13 +427,23 @@ function runHeadlessChild(
     });
     child.on("error", () => {
       clearTimeout(timeout);
-      resolvePromise(false);
+      resolvePromise({ ok: false, stdout: out, stderr: err, code: null });
     });
     child.on("close", (code) => {
       clearTimeout(timeout);
-      resolvePromise(code === 0 && agentReportedSuccess(out));
+      resolvePromise({ ok: code === 0 && agentReportedSuccess(out), stdout: out, stderr: err, code });
     });
   });
+}
+
+/** A short, prompt-injectable tail of a failure for the repair loop's error re-injection. */
+export function failureTail(stdout: string, stderr: string, max = 600): string {
+  const combined = `${stderr}\n${stdout}`
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const tail = combined.slice(-12).join(" ");
+  return tail.length > max ? tail.slice(-max) : tail;
 }
 
 /**
@@ -362,9 +479,9 @@ function mirrorToPane(paneId: string, chunk: string): void {
   spawnSync("tmux", ["display-message", "-t", paneId, "-d", "1", line.slice(0, 120)], { stdio: "ignore" });
 }
 
-function runVerify(cwd: string, verifyCmd: string): boolean {
-  const result = spawnSync("bash", ["-lc", verifyCmd], { cwd, stdio: "ignore", timeout: 300_000 });
-  return result.status === 0;
+function runVerify(cwd: string, verifyCmd: string): { ok: boolean; output: string } {
+  const result = spawnSync("bash", ["-lc", verifyCmd], { cwd, encoding: "utf8", timeout: 300_000 });
+  return { ok: result.status === 0, output: `${result.stdout ?? ""}\n${result.stderr ?? ""}` };
 }
 
 /** stopWhen evaluation: today we support the structural condition "all tasks done". */
@@ -390,6 +507,7 @@ export async function runAutonomyLoop(
   options: { execute: boolean; onIteration?: (r: IterationReport) => void }
 ): Promise<IterationReport[]> {
   const verifyCmd = detectVerifyCommand(ctx);
+  initCostLedger(ctx.boardDir);
   const panes = ensureWindow(
     ctx.session,
     ctx.cwd,
@@ -397,39 +515,63 @@ export async function runAutonomyLoop(
   );
 
   const reports: IterationReport[] = [];
+  const budget = ctx.loop.budgetUsd ?? 0;
+  // #5/#6 Isolation enables real parallelism. Worktrees require a git repo; without one we
+  // force serial execution so concurrent agents can't clobber the shared working dir.
+  const isolate = ctx.loop.isolate && worktreesSupported(ctx.cwd);
+  const maxParallel = isolate ? Math.max(1, ctx.loop.maxParallel) : 1;
+  // Track each role's worktree across iterations so the critic can merge accepted work back.
+  ctx.worktrees = ctx.worktrees ?? {};
 
   for (let iteration = 1; iteration <= ctx.loop.maxIterations; iteration++) {
-    const dispatched: { role: string; taskId: string }[] = [];
     const all = foldBoard(ctx.boardDir);
 
+    // Select at most one task per role this iteration (a role works one thing at a time),
+    // skipping roles that already have work awaiting review.
+    const pendingReview = new Set(
+      all.filter((t) => t.status === "needs-review").map((t) => t.claimedBy ?? t.assignee)
+    );
+    const selected: { role: RoleConfig; task: TaskView }[] = [];
     for (const role of ctx.project.roles) {
-      // The orchestrator/PM does review, not implementation dispatch, in this pass.
-      const open = openTasksFor(ctx.boardDir, role.name)
-        .filter((t) => dependenciesMet(t, all))
-        .sort((a, b) => b.priority - a.priority);
-      const next = open[0];
-      if (!next) continue;
-      const paneId = panes[role.name];
-      if (!paneId) continue;
-
-      if (options.execute) {
-        await dispatchTask(ctx, role, next, paneId, verifyCmd);
-      } else {
-        // Prompt-only: claim + emit a needs-review so the loop is observable without spend.
-        addEvent(ctx.boardDir, { ts: nowIso(), role: role.name, taskId: next.id, status: "claimed" });
-        addEvent(ctx.boardDir, {
-          ts: nowIso(),
-          role: role.name,
-          taskId: next.id,
-          status: "needs-review",
-          summary: "(prompt-only mode — no agent executed)"
-        });
-      }
-      dispatched.push({ role: role.name, taskId: next.id });
+      if (pendingReview.has(role.name)) continue;
+      const open = openTasksFor(ctx.boardDir, role.name).filter((t) => dependenciesMet(t, all));
+      const retryable = retryableTasksFor(ctx.boardDir, role.name, ctx.loop.maxRepairs).filter((t) =>
+        dependenciesMet(t, all)
+      );
+      const next = [...retryable, ...open].sort((a, b) => b.priority - a.priority)[0];
+      if (next && panes[role.name]) selected.push({ role, task: next });
     }
 
-    // Orchestrator review: auto-accept needs-review tasks (a real PM agent can override).
-    reviewPass(ctx);
+    // #6 Dispatch the selected SMEs CONCURRENTLY in batches bounded by maxParallel, each in
+    // its own worktree. This is the team working in true parallel end-to-end.
+    const dispatched: { role: string; taskId: string }[] = [];
+    for (let i = 0; i < selected.length; i += maxParallel) {
+      if (budget > 0 && totalSpend(ctx.boardDir) >= budget) break;
+      const batch = selected.slice(i, i + maxParallel);
+      await Promise.allSettled(
+        batch.map(({ role, task }) => {
+          dispatched.push({ role: role.name, taskId: task.id });
+          if (!options.execute) {
+            addEvent(ctx.boardDir, { ts: nowIso(), role: role.name, taskId: task.id, status: "claimed" });
+            addEvent(ctx.boardDir, {
+              ts: nowIso(),
+              role: role.name,
+              taskId: task.id,
+              status: "needs-review",
+              summary: "(prompt-only mode — no agent executed)"
+            });
+            return Promise.resolve();
+          }
+          const wt = isolate ? ensureWorktree(ctx.cwd, ctx.runId, role.name) : undefined;
+          if (wt) ctx.worktrees![role.name] = wt;
+          return dispatchTask(ctx, role, task, panes[role.name], verifyCmd, wt?.path ?? ctx.cwd);
+        })
+      );
+    }
+
+    // #1 Independent critic review of every needs-review task; #2 escalate exhausted ones.
+    await reviewPass(ctx, panes, options.execute, verifyCmd);
+    escalateExhausted(ctx);
 
     const summary = boardSummary(ctx.boardDir);
     const report: IterationReport = { iteration, dispatched, summary };
@@ -437,28 +579,212 @@ export async function runAutonomyLoop(
     options.onIteration?.(report);
 
     if (stopConditionMet(ctx)) break;
+    if (budget > 0 && totalSpend(ctx.boardDir) >= budget) break;
     if (!dispatched.length) break; // nothing left to do
     await delay(ctx.loop.pollSeconds * 1000);
   }
 
+  if (isolate) cleanupRunWorktrees(ctx.cwd, ctx.runId, ctx.project.roles.map((r) => r.name));
   return reports;
 }
 
+export type Verdict = { verdict: "accept" | "reject"; reasons: string[] };
+
 /**
- * Review pass run by the orchestrator. Accepts needs-review tasks (marks done). A real
- * PM agent prompt can replace this with criteria-based accept/reject; for the engine we
- * advance the board so the loop converges.
+ * #1 Real critic pass. For every task awaiting review, an INDEPENDENT reviewer SME (a
+ * different role/provider than the implementer wherever possible) reviews the actual git
+ * diff against the acceptance criteria and returns accept/reject. Accept → done + a
+ * hand-off message to the next role; reject → rejected + a repair task fed back to the
+ * implementer. This replaces the old rubber-stamp that marked everything done.
+ *
+ * In prompt-only (dry-run) mode there is no diff and no spend, so we accept to keep the
+ * loop observable — the real gate only runs under --execute.
  */
-function reviewPass(ctx: RunContext): void {
-  const orchestrator = ctx.loop.orchestrator;
+async function reviewPass(
+  ctx: RunContext,
+  panes: Record<string, string>,
+  execute: boolean,
+  verifyCmd: string | undefined
+): Promise<void> {
   for (const task of foldBoard(ctx.boardDir)) {
-    if (task.status === "needs-review") {
+    if (task.status !== "needs-review") continue;
+
+    if (!execute) {
       addEvent(ctx.boardDir, {
         ts: nowIso(),
-        role: orchestrator,
+        role: ctx.loop.orchestrator,
         taskId: task.id,
         status: "done",
-        summary: "Accepted by orchestrator review."
+        summary: "Accepted (prompt-only mode — no independent review)."
+      });
+      continue;
+    }
+
+    const implementer = task.claimedBy ?? task.assignee;
+    const wt = ctx.worktrees?.[implementer];
+    const reviewerRole = pickReviewer(ctx, task);
+    const verdict = await runReviewAgent(ctx, reviewerRole, task, panes[reviewerRole.name], wt?.path);
+
+    if (verdict.verdict === "accept") {
+      // #5 Merge the accepted work from the implementer's isolated worktree back to the
+      // main branch. A conflict or failed merge sends it back for repair rather than
+      // silently accepting un-merged work.
+      let mergeNote = "";
+      if (wt) {
+        const merge = mergeWorktree(ctx.cwd, wt);
+        if (!merge.ok) {
+          addEvent(ctx.boardDir, {
+            ts: nowIso(),
+            role: reviewerRole.name,
+            taskId: task.id,
+            status: "rejected",
+            summary: `Accepted but merge failed (${merge.reason ?? "conflict"}) — needs rebase.`.slice(0, 240)
+          });
+          addMessage(ctx.boardDir, {
+            ts: nowIso(),
+            from: reviewerRole.name,
+            to: implementer,
+            taskId: task.id,
+            body: `Your change for ${task.id} conflicts on merge: ${merge.reason ?? "conflict"}. Rebase on main and resubmit.`
+          });
+          continue;
+        }
+        mergeNote = " Merged to main.";
+      }
+      addEvent(ctx.boardDir, {
+        ts: nowIso(),
+        role: reviewerRole.name,
+        taskId: task.id,
+        status: "done",
+        summary: `Accepted by ${reviewerRole.name}.${mergeNote} ${verdict.reasons.join("; ")}`.slice(0, 240)
+      });
+      // #4 Hand off: tell the downstream dependents their input is ready.
+      addMessage(ctx.boardDir, {
+        ts: nowIso(),
+        from: reviewerRole.name,
+        to: "*",
+        taskId: task.id,
+        body: `Task ${task.id} (${task.title}) accepted and complete.${mergeNote}`
+      });
+    } else {
+      const reasons = verdict.reasons.length ? verdict.reasons.join("; ") : "did not meet acceptance criteria";
+      addEvent(ctx.boardDir, {
+        ts: nowIso(),
+        role: reviewerRole.name,
+        taskId: task.id,
+        status: "rejected",
+        summary: `Rejected by ${reviewerRole.name}: ${reasons}`.slice(0, 240)
+      });
+      // #4 Send the rejection back to the implementer so the repair attempt has the why.
+      addMessage(ctx.boardDir, {
+        ts: nowIso(),
+        from: reviewerRole.name,
+        to: task.claimedBy ?? task.assignee,
+        taskId: task.id,
+        body: `Review REJECTED task ${task.id}: ${reasons}. Fix and resubmit.`
+      });
+    }
+  }
+}
+
+/** Pick an independent reviewer: prefer the configured reviewer role, else any role whose
+ *  provider differs from the implementer, else the orchestrator. Never self-review. */
+function pickReviewer(ctx: RunContext, task: TaskView): RoleConfig {
+  const implementerRole = ctx.project.roles.find((r) => r.name === (task.claimedBy ?? task.assignee));
+  const implementerProvider = implementerRole?.provider;
+  const configured = ctx.project.roles.find((r) => r.name === ctx.loop.reviewer);
+  if (configured && configured.name !== implementerRole?.name) return configured;
+
+  const independent = ctx.project.roles.find(
+    (r) => r.name !== implementerRole?.name && r.provider !== implementerProvider
+  );
+  if (independent) return independent;
+
+  return (
+    ctx.project.roles.find((r) => r.name === ctx.loop.orchestrator) ??
+    ctx.project.roles.find((r) => r.name !== implementerRole?.name) ??
+    ctx.project.roles[0]
+  );
+}
+
+async function runReviewAgent(
+  ctx: RunContext,
+  reviewer: RoleConfig,
+  task: TaskView,
+  paneId: string | undefined,
+  reviewCwd: string = ctx.cwd
+): Promise<Verdict> {
+  const provider = ctx.project.providers[reviewer.provider];
+  if (!provider) return { verdict: "reject", reasons: ["reviewer provider missing"] };
+
+  // Diff the implementer's worktree (where the change actually lives) so the reviewer
+  // sees the real change even before it's merged back to main.
+  const diff = isGitRepo(reviewCwd) ? workingDiff(reviewCwd, undefined) : "(not a git repo — review by reading the working tree)";
+  const promptFile = resolve(ctx.promptDir, `${reviewer.name}.md`);
+  const reviewPrompt = [
+    `You are an INDEPENDENT reviewer. You did NOT write this code. Review it adversarially.`,
+    `Review the change for task ${task.id}: "${task.title}" against its acceptance criteria.`,
+    ``,
+    `Acceptance criteria:`,
+    ...task.acceptanceCriteria.map((c) => `- ${c}`),
+    ``,
+    `The diff under review:`,
+    "```diff",
+    diff,
+    "```",
+    ``,
+    `Reject if any criterion is unmet, if tests were weakened, or if the change is incorrect/unsafe.`,
+    `Respond with ONLY a JSON object, no prose: {"verdict":"accept"|"reject","reasons":["..."]}`
+  ].join("\n");
+
+  if (paneId) runCommandInPane(paneId, `# review ${task.id} (${reviewer.name})`);
+  const cmd = buildHeadlessCommand(provider, reviewPrompt, promptFile);
+  const result = await runHeadlessChild(ctx, cmd.command, cmd.args, cmd.env, paneId ?? "", reviewCwd);
+
+  const cost = parseCost(result.stdout);
+  if (cost.usd > 0 || cost.outputTokens) {
+    recordCost(ctx.boardDir, { ts: nowIso(), role: reviewer.name, taskId: task.id, usd: cost.usd, inputTokens: cost.inputTokens, outputTokens: cost.outputTokens });
+  }
+
+  return parseVerdict(result.stdout);
+}
+
+export function parseVerdict(raw: string): Verdict {
+  // Unwrap provider envelope (claude wraps the model text in {"result":"..."}).
+  let text = raw;
+  try {
+    const env = JSON.parse(raw.trim());
+    if (env && typeof env === "object" && typeof env.result === "string") text = env.result;
+  } catch {
+    // not an envelope
+  }
+  const match = /\{[\s\S]*?"verdict"[\s\S]*?\}/.exec(text);
+  if (match) {
+    try {
+      const obj = JSON.parse(match[0]) as { verdict?: string; reasons?: unknown };
+      const verdict = obj.verdict === "accept" ? "accept" : "reject";
+      const reasons = Array.isArray(obj.reasons) ? obj.reasons.map(String) : [];
+      return { verdict, reasons };
+    } catch {
+      // fall through
+    }
+  }
+  // Heuristic fallback: explicit "accept" with no "reject" → accept; else reject (safe default).
+  const lower = text.toLowerCase();
+  if (lower.includes("accept") && !lower.includes("reject")) return { verdict: "accept", reasons: ["heuristic accept"] };
+  return { verdict: "reject", reasons: ["could not parse a clear verdict — defaulting to reject"] };
+}
+
+/** #2 Tasks that have exhausted their repair budget are escalated (terminal), not stranded. */
+function escalateExhausted(ctx: RunContext): void {
+  for (const task of foldBoard(ctx.boardDir)) {
+    if ((task.status === "blocked" || task.status === "rejected") && task.attempts >= ctx.loop.maxRepairs) {
+      addEvent(ctx.boardDir, {
+        ts: nowIso(),
+        role: ctx.loop.orchestrator,
+        taskId: task.id,
+        status: "escalated",
+        summary: `Escalated to human after ${task.attempts} failed attempts: ${task.lastSummary ?? ""}`.slice(0, 240)
       });
     }
   }

@@ -98,7 +98,17 @@ export const LoopSchema = z.object({
   /** Poll interval (seconds) the autonomy loop uses to read panes / the board. */
   pollSeconds: z.number().int().positive().default(8),
   /** Which role acts as the orchestrator brain that decomposes the goal. */
-  orchestrator: z.string().default("pm")
+  orchestrator: z.string().default("pm"),
+  /** Max times a failed task is re-dispatched with error context before escalating. */
+  maxRepairs: z.number().int().nonnegative().default(2),
+  /** Which role independently reviews implemented work (the critic). Empty = orchestrator. */
+  reviewer: z.string().default("qa"),
+  /** Stop the run once cumulative agent spend exceeds this many USD (0 = unlimited). */
+  budgetUsd: z.number().nonnegative().default(0),
+  /** Max SMEs working concurrently. >1 requires git-worktree isolation (auto-enabled). */
+  maxParallel: z.number().int().positive().default(1),
+  /** Run each role in an isolated git worktree so parallel edits don't collide. */
+  isolate: z.boolean().default(true)
 });
 
 export const ProjectSchema = z.object({

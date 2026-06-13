@@ -37,6 +37,14 @@ How it works:
 - **tmux is the viewport; agents run headless.** Each SME gets a tiled pane so you can watch the whole team on one screen, but control flow spawns a fresh headless `claude -p` / `codex exec` / `gemini -p` child per task — reliable completion detection, no screen-scraping.
 - **Safe by default.** `loop run` is a dry-run that drives the board with no spend; add `--execute` to actually launch the agents.
 
+**Verified, self-healing, parallel** — the part that separates a real team from a demo:
+
+- **Independent critic.** A reviewer SME (a *different* model than the implementer) reviews the actual `git diff` against the acceptance criteria and can **reject** — no rubber-stamping. Rejections go back with reasons.
+- **Self-healing.** Failed tasks are retried with the captured error injected into the next attempt, up to `maxRepairs`, then escalated to a human instead of stranded.
+- **Regression-gated.** HEAD is snapshotted before each task; a change that turns a green suite red is reverted. Test/CI files are hashed so an agent can't weaken its own grader to pass (reward-hacking guard).
+- **True parallelism.** Each role works in its own **git worktree** on its own branch, so SMEs run concurrently (`maxParallel`) without clobbering each other; accepted work merges back to main through the critic gate.
+- **Budgeted.** Per-task spend is tracked to `.loop/board/costs.jsonl`; the run stops at `budgetUsd`.
+
 See [docs/autonomous-team.md](docs/autonomous-team.md) for the full guide.
 
 ## Why This Exists

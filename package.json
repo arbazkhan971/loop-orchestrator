@@ -1,6 +1,6 @@
 {
   "name": "loop-orchestrator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Open-source tmux AI agent team orchestrator for Claude Code, Codex, Gemini CLI, and custom terminal coding agents.",
   "type": "module",
   "license": "MIT",

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+### State-of-the-art autonomy: verified, self-healing, parallel
+
+A multi-agent SOTA audit (vs Devin, OpenHands, SWE-agent, AutoGen, MetaGPT) found the 0.2 loop shipped self-declared "done" with no independent check, ran serially, and stranded failures. 0.3 closes that gap — the team now produces **verified, self-healing, parallel** work.
+
+- **Independent critic review** — a reviewer SME (different provider than the implementer) reviews the actual `git diff` against acceptance criteria and returns accept/reject. Replaces the old auto-accept. Rejections go back to the implementer with the reasons.
+- **Repair / retry loop** — failed tasks are re-dispatched with the captured error injected into the prompt ("previous attempt failed: …; don't repeat it"), up to `maxRepairs`, then escalated to a human instead of stranded.
+- **Git checkpoint + revert-on-regression** — HEAD is snapshotted before each task; a change that turns a green suite red is reverted, never inherited by the next task.
+- **Reward-hacking guard** — test/CI files are hashed before and after; an agent that edits its own grader to pass is hard-blocked.
+- **Real coordination** — each SME now receives an inbox (messages addressed to it) and its upstream dependencies' results, so `dependsOn` carries artifacts, not just ordering.
+- **Git-worktree isolation + true parallelism** — each role works on its own branch in an isolated worktree, so SMEs run **concurrently** (`maxParallel`) without clobbering each other; accepted work is merged back to main through the critic gate.
+- **Cost ledger + budget gate** — per-task spend is parsed from agent output into `.loop/board/costs.jsonl`; the run stops at `budgetUsd`.
+
+New loop config: `reviewer`, `maxRepairs`, `maxParallel`, `isolate`, `budgetUsd`. New status `escalated`.
+
 ## 0.2.0
 
 ### Autonomous SME team

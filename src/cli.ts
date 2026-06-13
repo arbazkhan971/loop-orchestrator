@@ -5,15 +5,11 @@ import { Command } from "commander";
 import { configureLocalAuth, getAuthStatus } from "./auth.js";
 import { loadConfig, getProject } from "./config/load.js";
 import { startDashboard } from "./dashboard/server.js";
-import { capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
-import {
-  createTmuxRunner,
-  manifestPath,
-  realClock,
-  runWorkflow,
-  validateWorkflow,
-  writeWorkflowManifest
-} from "./workflow/run.js";
+import { validateConfig, validateWorkflow } from "./config/validate.js";
+import { evaluateDoctor, gatherDoctor } from "./doctor.js";
+import { attachError, attachSession, capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
+import { listRuns, readManifest } from "./workflow/manifest.js";
+import { createTmuxRunner, manifestPath, realClock, runWorkflow, writeWorkflowManifest } from "./workflow/run.js";
 
 const program = new Command();
 
@@ -43,7 +39,30 @@ program
     const opts = program.opts();
     const loaded = safeLoadConfig(opts.config, opts.json);
     if (!loaded) return;
+    const errors = validateConfig(loaded.config);
+    if (errors.length) {
+      output({ ok: false, config: loaded.path, errors }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
     output({ ok: true, config: loaded.path, projects: loaded.config.projects.map((project) => project.name) }, opts.json);
+  });
+
+program
+  .command("doctor")
+  .description("check tmux, provider CLIs, auth, and config before a run")
+  .option("-p, --project <name>", "project name")
+  .action((options) => {
+    const opts = program.opts();
+    let loaded: ReturnType<typeof loadConfig> | undefined;
+    try {
+      loaded = loadConfig(opts.config);
+    } catch {
+      loaded = undefined;
+    }
+    const report = evaluateDoctor(gatherDoctor(loaded, options.project));
+    output(report, opts.json);
+    if (!report.ok) process.exitCode = 1;
   });
 
 const auth = program.command("auth").description("inspect and configure local provider authentication");
@@ -170,6 +189,50 @@ program
   .description("print captured logs for a session")
   .action((session, options) => {
     console.log(capturePane(session, Number(options.lines)));
+  });
+
+program
+  .command("attach")
+  .argument("<session>", "tmux session name")
+  .description("attach to a running loop session")
+  .action((session) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    const namespace = loaded?.config.defaults.namespace ?? "loop";
+    const error = attachError(session, listSessions(namespace));
+    if (error) {
+      output({ ok: false, error }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+    attachSession(session);
+  });
+
+program
+  .command("runs")
+  .description("list past and in-flight workflow runs")
+  .action(() => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    output({ runs: listRuns(loaded) }, opts.json);
+  });
+
+program
+  .command("show")
+  .argument("<run>", "run id")
+  .description("show the workflow manifest for a run")
+  .action((run) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    const manifest = readManifest(loaded, run);
+    if (!manifest) {
+      output({ ok: false, error: `No workflow manifest for run "${run}".` }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+    output(manifest, opts.json);
   });
 
 program

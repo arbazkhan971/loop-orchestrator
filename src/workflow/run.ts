@@ -32,25 +32,6 @@ function reason(condition: string, evidence?: string): string {
   return evidence ? `${condition}: ${evidence}` : condition;
 }
 
-// Validate that a workflow only references known roles and known stages before
-// we start launching anything. Returns all problems so they surface together.
-export function validateWorkflow(project: ProjectConfig, workflow: WorkflowConfig): string[] {
-  const errors: string[] = [];
-  const roleNames = new Set(project.roles.map((role) => role.name));
-  const stageNames = new Set(workflow.stages.map((stage) => stage.name));
-
-  for (const stage of workflow.stages) {
-    if (!roleNames.has(stage.role)) {
-      errors.push(`Stage "${stage.name}" references unknown role "${stage.role}".`);
-    }
-    for (const dep of stage.dependsOn) {
-      if (!stageNames.has(dep)) errors.push(`Stage "${stage.name}" depends on unknown stage "${dep}".`);
-      if (dep === stage.name) errors.push(`Stage "${stage.name}" depends on itself.`);
-    }
-  }
-  return errors;
-}
-
 export async function runWorkflow(
   workflow: WorkflowConfig,
   runner: WorkflowRunner,

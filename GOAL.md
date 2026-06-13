@@ -117,11 +117,18 @@ Each feature below has: **why it matters** (which mission outcome), a **sketch**
 approach, and **acceptance criteria** you can check. Build them roughly top-to-bottom;
 respect the dependency notes.
 
-> **Shipped so far:** An initial **dynamic workflow engine** now covers the core of
-> Features A, B, and D — `loop run --workflow <name>` launches stages as their
-> dependencies complete, evaluates stop-conditions each tick, and writes a per-run
-> manifest. See `docs/workflows.md`. Remaining polish on those features (resume,
-> richer manifest history commands, GitHub-backed signals) is still open below.
+> **Shipped so far:**
+> - **A / B / D (core):** dynamic workflow engine — `loop run --workflow <name>` launches
+>   stages as their dependencies complete, evaluates stop-conditions each tick, and writes
+>   a per-run manifest. See `docs/workflows.md`.
+> - **C:** `loop attach <session>` (closes the dangling reference).
+> - **D (history):** `loop runs` lists runs newest-first; `loop show <run>` prints a manifest.
+> - **E:** `loop doctor` — tmux + provider-CLI + auth + config preflight with fixes.
+> - **F:** `loop validate` now checks references (role→provider, role→repo, stage→role/stage),
+>   reporting all problems at once.
+>
+> Still open: loop resume, GitHub-backed signals (G), send-to-agent (H), live dashboard (I),
+> crash detection/restart (J), custom templates (K), cost signal (L).
 
 ### Feature A — The loop runner (make the namesake real) 🔴 highest priority
 

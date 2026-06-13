@@ -323,12 +323,16 @@ loop stop issue-123
 
 ```bash
 loop init                 # create loop.config.yaml and brief.md
+loop doctor               # check tmux, provider CLIs, auth, and config
 loop auth status          # inspect local provider CLI/API-key readiness
 loop auth configure --write # write detected local auth mode into config
-loop validate             # validate config
+loop validate             # validate config (schema + references)
 loop start --run bug-42   # start role sessions in tmux
 loop run --workflow delivery # run a dynamic dependency-driven workflow
+loop runs                 # list past and in-flight workflow runs
+loop show <run>           # show a run's workflow manifest
 loop status               # list loop sessions
+loop attach <session>     # attach to a running loop session
 loop logs <session>       # capture recent tmux pane output
 loop stop bug-42          # kill sessions for a run
 loop dashboard            # open local web dashboard

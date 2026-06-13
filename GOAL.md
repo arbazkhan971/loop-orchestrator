@@ -117,6 +117,12 @@ Each feature below has: **why it matters** (which mission outcome), a **sketch**
 approach, and **acceptance criteria** you can check. Build them roughly top-to-bottom;
 respect the dependency notes.
 
+> **Shipped so far:** An initial **dynamic workflow engine** now covers the core of
+> Features A, B, and D — `loop run --workflow <name>` launches stages as their
+> dependencies complete, evaluates stop-conditions each tick, and writes a per-run
+> manifest. See `docs/workflows.md`. Remaining polish on those features (resume,
+> richer manifest history commands, GitHub-backed signals) is still open below.
+
 ### Feature A — The loop runner (make the namesake real) 🔴 highest priority
 
 **Why:** Mission outcome #2. The product is called *Loop* Orchestrator but does not loop.

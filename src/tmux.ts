@@ -86,6 +86,21 @@ export function startProjectSessions(
   return infos;
 }
 
+// Launch a single role session, creating the run prompt directory on demand.
+// Used by the workflow engine, which starts stages one at a time as their
+// dependencies complete rather than all up front.
+export function launchRoleSession(
+  loaded: LoadedConfig,
+  project: ProjectConfig,
+  role: RoleConfig,
+  runId: string,
+  execute: boolean
+): SessionInfo {
+  const promptDir = resolve(loaded.rootDir, loaded.config.defaults.runDir, runId, "prompts");
+  mkdirSync(promptDir, { recursive: true });
+  return startRoleSession(loaded, project, role, runId, promptDir, execute);
+}
+
 function startRoleSession(
   loaded: LoadedConfig,
   project: ProjectConfig,

@@ -327,11 +327,52 @@ loop auth status          # inspect local provider CLI/API-key readiness
 loop auth configure --write # write detected local auth mode into config
 loop validate             # validate config
 loop start --run bug-42   # start role sessions in tmux
+loop run --workflow delivery # run a dynamic dependency-driven workflow
 loop status               # list loop sessions
 loop logs <session>       # capture recent tmux pane output
 loop stop bug-42          # kill sessions for a run
 loop dashboard            # open local web dashboard
 ```
+
+## Dynamic Workflows
+
+Beyond starting a whole team at once, you can define a **workflow**: a dependency-driven
+pipeline where each stage launches only after its dependencies complete and advances when
+its stop-conditions fire. This is the autonomous "loop" — it iterates on a cadence,
+evaluates runtime signals (test output, idle panes, opened PRs), and stops cleanly.
+
+```yaml
+workflows:
+  - name: delivery
+    cadenceSeconds: 30
+    maxIterations: 50
+    stages:
+      - name: plan
+        role: cto
+        completeWhen: ["pane-matches:PLAN COMPLETE"]
+      - name: implement-backend
+        role: be1
+        dependsOn: [plan]
+        completeWhen: [pr-opened, tests-pass]
+        failWhen: [tests-fail]
+      - name: implement-frontend
+        role: fe1
+        dependsOn: [plan]
+        completeWhen: [pr-opened]
+      - name: qa
+        role: qa1
+        dependsOn: [implement-backend, implement-frontend]
+        completeWhen: [review-approved, "pane-matches:MERGE READY"]
+```
+
+```bash
+loop run --workflow delivery --run issue-123            # safe mode
+loop run --workflow delivery --run issue-123 --execute  # launch real agents
+loop run --workflow delivery --once                     # one tick, then exit
+```
+
+Every tick writes an auditable manifest to `.loop/runs/<run-id>/workflow.json`. See
+[docs/workflows.md](./docs/workflows.md) for the full stop-condition vocabulary and behavior.
 
 ## Common Workflows
 

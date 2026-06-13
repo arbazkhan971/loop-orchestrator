@@ -48,6 +48,22 @@ export const LoopSchema = z.object({
   stopWhen: z.array(z.string()).default(["tests pass", "pull request opened", "review complete"])
 });
 
+export const StageSchema = z.object({
+  name: z.string().min(1),
+  role: z.string().min(1),
+  dependsOn: z.array(z.string()).default([]),
+  completeWhen: z.array(z.string()).default(["pane-idle:120"]),
+  failWhen: z.array(z.string()).default([]),
+  optional: z.boolean().default(false)
+});
+
+export const WorkflowSchema = z.object({
+  name: z.string().min(1),
+  cadenceSeconds: z.number().int().positive().default(30),
+  maxIterations: z.number().int().positive().default(50),
+  stages: z.array(StageSchema).min(1)
+});
+
 export const ProjectSchema = z.object({
   name: z.string().min(1),
   brief: z.string().default("brief.md"),
@@ -56,7 +72,8 @@ export const ProjectSchema = z.object({
   providers: z.record(z.string(), ProviderSchema),
   repositories: z.array(RepositorySchema).default([]),
   roles: z.array(RoleSchema).min(1),
-  loops: z.array(LoopSchema).default([])
+  loops: z.array(LoopSchema).default([]),
+  workflows: z.array(WorkflowSchema).default([])
 });
 
 export const RootConfigSchema = z.object({
@@ -80,5 +97,7 @@ export type AuthConfig = z.infer<typeof AuthSchema>;
 export type RepositoryConfig = z.infer<typeof RepositorySchema>;
 export type RoleConfig = z.infer<typeof RoleSchema>;
 export type LoopConfig = z.infer<typeof LoopSchema>;
+export type StageConfig = z.infer<typeof StageSchema>;
+export type WorkflowConfig = z.infer<typeof WorkflowSchema>;
 export type ProjectConfig = z.infer<typeof ProjectSchema>;
 export type RootConfig = z.infer<typeof RootConfigSchema>;

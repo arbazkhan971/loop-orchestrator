@@ -6,6 +6,14 @@ import { configureLocalAuth, getAuthStatus } from "./auth.js";
 import { loadConfig, getProject } from "./config/load.js";
 import { startDashboard } from "./dashboard/server.js";
 import { capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
+import {
+  createTmuxRunner,
+  manifestPath,
+  realClock,
+  runWorkflow,
+  validateWorkflow,
+  writeWorkflowManifest
+} from "./workflow/run.js";
 
 const program = new Command();
 
@@ -91,6 +99,58 @@ program
       roles: options.role
     });
     output({ run: options.run, project: project.name, sessions }, opts.json);
+  });
+
+program
+  .command("run")
+  .description("run a dynamic workflow: launch stages as their dependencies complete")
+  .option("-p, --project <name>", "project name")
+  .option("-w, --workflow <name>", "workflow name")
+  .option("-r, --run <id>", "run id", defaultRunId())
+  .option("--execute", "launch configured agent commands instead of prompt-only shells")
+  .option("--once", "run a single tick (launch ready stages) and exit")
+  .action(async (options) => {
+    const opts = program.opts();
+    const loaded = safeLoadConfig(opts.config, opts.json);
+    if (!loaded) return;
+    const project = getProject(loaded, options.project);
+
+    const workflow = resolveWorkflow(project, options.workflow);
+    if (!workflow) {
+      const names = project.workflows.map((item) => item.name).join(", ") || "(none defined)";
+      output({ ok: false, error: `Workflow not found: ${options.workflow ?? "(missing)"}. Available: ${names}` }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+
+    const problems = validateWorkflow(project, workflow);
+    if (problems.length) {
+      output({ ok: false, workflow: workflow.name, errors: problems }, opts.json);
+      process.exitCode = 1;
+      return;
+    }
+
+    const runner = createTmuxRunner(loaded, project, options.run, Boolean(options.execute));
+    const finalState = await runWorkflow(
+      workflow,
+      { ...runner, onTick: (state) => writeWorkflowManifest(loaded, project, options.run, state) },
+      realClock,
+      { maxTicks: options.once ? 1 : undefined }
+    );
+
+    output(
+      {
+        run: options.run,
+        project: project.name,
+        workflow: workflow.name,
+        outcome: finalState.outcome ?? "in-progress",
+        done: finalState.done,
+        iteration: finalState.iteration,
+        manifest: manifestPath(loaded, options.run),
+        stages: finalState.stages
+      },
+      opts.json
+    );
   });
 
 program
@@ -188,6 +248,11 @@ function writeIfMissing(path: string, content: string, force: boolean) {
     return;
   }
   writeFileSync(path, content);
+}
+
+function resolveWorkflow(project: ReturnType<typeof getProject>, name?: string) {
+  if (!name) return project.workflows.length === 1 ? project.workflows[0] : undefined;
+  return project.workflows.find((workflow) => workflow.name === name);
 }
 
 function defaultRunId(): string {
@@ -292,6 +357,34 @@ projects:
           - tests pass
           - pull request opened
           - release reviewer approves
+    workflows:
+      - name: delivery
+        cadenceSeconds: 30
+        maxIterations: 50
+        stages:
+          - name: plan
+            role: cto
+            completeWhen:
+              - "pane-matches:PLAN COMPLETE"
+          - name: implement-backend
+            role: be1
+            dependsOn: [plan]
+            completeWhen:
+              - pr-opened
+              - tests-pass
+            failWhen:
+              - tests-fail
+          - name: implement-frontend
+            role: fe1
+            dependsOn: [plan]
+            completeWhen:
+              - pr-opened
+          - name: qa
+            role: qa1
+            dependsOn: [implement-backend, implement-frontend]
+            completeWhen:
+              - review-approved
+              - "pane-matches:MERGE READY"
 `;
 }
 

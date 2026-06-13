@@ -6,6 +6,7 @@ import { configureLocalAuth, getAuthStatus } from "./auth.js";
 import { defaultRunId, output, safeLoadConfig, writeIfMissing } from "./cli/support.js";
 import { getProject } from "./config/load.js";
 import { startDashboard } from "./dashboard/server.js";
+import { packageVersion } from "./metadata.js";
 import { starterBrief, starterConfig } from "./starter.js";
 import { capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
 
@@ -14,7 +15,7 @@ const program = new Command();
 program
   .name("loop")
   .description("tmux-based AI agent team orchestrator")
-  .version("0.1.0")
+  .version(packageVersion)
   .option("-c, --config <path>", "path to loop.config.yaml")
   .option("--json", "print machine-readable JSON");
 

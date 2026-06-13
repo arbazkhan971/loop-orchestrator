@@ -10,6 +10,15 @@ const cliPath = resolve(repoRoot, "src/cli.ts");
 const tsxPath = resolve(repoRoot, "node_modules/tsx/dist/cli.mjs");
 
 describe("CLI", () => {
+  it("reports the package version", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8")) as { version: string };
+
+    const result = runLoop(["--version"], repoRoot);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe(packageJson.version);
+  });
+
   it("initializes starter files without overwriting existing files by default", () => {
     const root = mkdtempSync(join(tmpdir(), "loop-cli-init-"));
 

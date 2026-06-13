@@ -115,6 +115,66 @@ function startRoleSession(
   return { role: role.name, session, provider: role.provider, promptFile, status: "started" };
 }
 
+export function paneTitle(title: string): string {
+  return title.replace(/[^\w \-/]/g, "").slice(0, 40);
+}
+
+/**
+ * Ensure a single tmux window holding one tiled pane per role — the unified "mission
+ * control" viewport so a human can watch the whole team on one screen with
+ * `tmux attach -t <session>` (or `loop monitor`). Returns role -> pane id.
+ *
+ * We create the session detached, split it into N panes, apply the `tiled` layout so
+ * every agent is visible at once, and title each pane with its role.
+ */
+export function ensureWindow(
+  session: string,
+  cwd: string,
+  roles: { name: string; title: string }[]
+): Record<string, string> {
+  if (!roles.length) return {};
+
+  if (!tmuxOk(["has-session", "-t", session])) {
+    runTmux(["new-session", "-d", "-s", session, "-c", cwd, "-x", "220", "-y", "50"]);
+    // Enable pane titles/borders so each agent is labeled in the grid.
+    spawnSync("tmux", ["set-option", "-t", session, "pane-border-status", "top"], { stdio: "ignore" });
+    spawnSync("tmux", ["set-option", "-t", session, "pane-border-format", " #{pane_title} "], { stdio: "ignore" });
+    for (let i = 1; i < roles.length; i++) {
+      runTmux(["split-window", "-t", session, "-c", cwd]);
+      runTmux(["select-layout", "-t", session, "tiled"]);
+    }
+    runTmux(["select-layout", "-t", session, "tiled"]);
+  }
+
+  const paneIds = runTmux(["list-panes", "-t", session, "-F", "#{pane_id}"])
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const map: Record<string, string> = {};
+  roles.forEach((role, i) => {
+    const paneId = paneIds[i];
+    if (!paneId) return;
+    map[role.name] = paneId;
+    spawnSync("tmux", ["select-pane", "-t", paneId, "-T", `${role.name} · ${role.title}`], { stdio: "ignore" });
+  });
+  return map;
+}
+
+/** Send a command line to a specific pane (used for the human-visible viewport). */
+export function runCommandInPane(paneId: string, line: string): void {
+  spawnSync("tmux", ["send-keys", "-t", paneId, line, "Enter"], { stdio: "ignore" });
+}
+
+export function capturePaneById(paneId: string, lines = 40): string {
+  const result = spawnSync("tmux", ["capture-pane", "-pt", paneId, "-S", `-${lines}`], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout : "";
+}
+
+export function killSession(session: string): boolean {
+  return tmuxOk(["kill-session", "-t", session]);
+}
+
 function buildExecutableShell(provider: ProjectConfig["providers"][string], promptFile: string): string {
   const providerCommand = buildProviderCommand(provider, promptFile);
   const command = commandToShell(providerCommand);

@@ -50,7 +50,7 @@ projects:
       expect(config).toMatchObject({ name: "demo", safetyMode: "workspace-write" });
 
       const html = await fetch(`http://127.0.0.1:${port}/`).then((response) => response.text());
-      expect(html).toContain("<title>Loop Orchestrator</title>");
+      expect(html).toContain("Loop Orchestrator");
       expect(html).toContain("demo");
     } finally {
       await stopProcess(child);

@@ -12,3 +12,4 @@ export * from "./monitor.js";
 export * from "./git.js";
 export * from "./cost.js";
 export * from "./worktree.js";
+export * from "./dashboard/data.js";

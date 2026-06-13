@@ -5,6 +5,7 @@ import { boardSummary } from "../board.js";
 import { LoadedConfig, getProject } from "../config/load.js";
 import type { ProjectConfig } from "../config/schema.js";
 import { capturePane as captureTmuxPane, listSessions as listTmuxSessions } from "../tmux.js";
+import { buildAgentCards, buildAttention, buildGraph, buildOverview, buildTimeline } from "./data.js";
 import { renderDashboard } from "./render.js";
 
 export type BoardSummaryResult = ReturnType<typeof boardSummary>;
@@ -101,7 +102,42 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
 
     if (url.pathname === "/api/board") {
       const run = url.searchParams.get("run") ?? undefined;
-      return json(res, readBoard(run));
+      const board = readBoard(run);
+      const boardDir = resolveBoardDir(options.runsDir, run);
+      // Enrich with the critical path so the kanban can mark gating tasks.
+      const criticalPath = boardDir ? safe(() => buildGraph(boardDir).criticalPath, [] as string[]) : [];
+      return json(res, { ...board, criticalPath });
+    }
+
+    if (url.pathname === "/api/overview") {
+      const boardDir = resolveBoardDir(options.runsDir, url.searchParams.get("run"));
+      if (!boardDir) return json(res, emptyOverview(options.project.name));
+      return json(res, safe(() => buildOverview(boardDir, options.project), emptyOverview(options.project.name)));
+    }
+
+    if (url.pathname === "/api/agents") {
+      const boardDir = resolveBoardDir(options.runsDir, url.searchParams.get("run"));
+      if (!boardDir) return json(res, idleAgents(options.project));
+      return json(res, safe(() => buildAgentCards(boardDir, options.project), idleAgents(options.project)));
+    }
+
+    if (url.pathname === "/api/timeline") {
+      const boardDir = resolveBoardDir(options.runsDir, url.searchParams.get("run"));
+      const limit = Number(url.searchParams.get("limit") ?? 60);
+      if (!boardDir) return json(res, []);
+      return json(res, safe(() => buildTimeline(boardDir, limit), [] as unknown[]));
+    }
+
+    if (url.pathname === "/api/graph") {
+      const boardDir = resolveBoardDir(options.runsDir, url.searchParams.get("run"));
+      if (!boardDir) return json(res, { nodes: [], edges: [], criticalPath: [] });
+      return json(res, safe(() => buildGraph(boardDir), { nodes: [], edges: [], criticalPath: [] }));
+    }
+
+    if (url.pathname === "/api/attention") {
+      const boardDir = resolveBoardDir(options.runsDir, url.searchParams.get("run"));
+      if (!boardDir) return json(res, { tasks: [], warnings: [] });
+      return json(res, safe(() => buildAttention(boardDir, options.project), { tasks: [], warnings: [] as string[] }));
     }
 
     if (url.pathname === "/api/logs") {
@@ -118,4 +154,46 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
 function json(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(data, null, 2));
+}
+
+/** Run a read and fall back to a default on any error — endpoints must never 500. */
+function safe<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
+}
+
+function emptyOverview(project: string) {
+  return {
+    project,
+    totals: { total: 0, done: 0, inProgress: 0, blocked: 0, open: 0, needsReview: 0 },
+    byStatus: {},
+    progressPct: 0,
+    agentsActive: 0,
+    agentsTotal: 0,
+    rejections: 0,
+    retries: 0,
+    escalated: 0,
+    spendUsd: 0,
+    budgetUsd: 0,
+    budgetPct: null,
+    tokensIn: 0,
+    tokensOut: 0,
+    estCompletionMs: null
+  };
+}
+
+function idleAgents(project: ProjectConfig) {
+  return project.roles.map((role) => ({
+    role: role.name,
+    title: role.title,
+    sme: role.sme,
+    provider: role.provider,
+    state: "idle" as const,
+    attempts: 0,
+    spendUsd: 0,
+    done: 0
+  }));
 }

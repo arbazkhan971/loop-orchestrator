@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+### Mission-control dashboard
+
+Replaced the flat task table with an insightful, actionable dashboard (informed by how OpenHands, AutoGen Studio, and agent-observability tools like Langfuse/AgentOps present runs):
+
+- **KPI bar** — progress %, agents active, in-progress/blocked, retries/rejections, **estimated time left**, and **spend vs budget** with amber/red thresholds.
+- **Needs-attention strip** — blocked / rejected / escalated tasks surfaced with their failure reason, plus budget warnings.
+- **Agent swimlanes** — per-SME card with current task, a live idle timer that flags stuck agents, spend, and an expandable terminal-output peek.
+- **Dependency-aware task board** — kanban by status with dependency chips (red = blocking, green = satisfied), a "ready ▶" badge, and **critical-path** markers.
+- **Activity timeline** — merged event + inter-agent message feed.
+
+New zero-dependency JSON endpoints: `/api/overview`, `/api/agents`, `/api/timeline`, `/api/graph`, `/api/attention` (board fold + cost ledger aggregations in `src/dashboard/data.ts`). The page polls every 2.5s — no build step.
+
 ## 0.3.0
 
 ### State-of-the-art autonomy: verified, self-healing, parallel

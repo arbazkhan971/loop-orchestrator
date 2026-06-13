@@ -59,10 +59,18 @@ See [docs/autonomous-team.md](docs/autonomous-team.md) for the full guide.
 
 ### Live dashboard
 
-`loop dashboard` opens a local mission-control view of the shared board — every task, its assigned SME, and its status — updating as the team works. (`loop monitor` is the single-screen terminal version.)
+`loop dashboard` opens a local **mission control** that answers, at a glance, *is it working, where is it stuck, and what's it costing*:
+
+- **KPI bar** — progress %, agents active, in-progress/blocked counts, retries, estimated time left, and **spend vs budget** (turns amber/red as you approach the cap).
+- **Needs-attention strip** — every blocked / rejected / escalated task with the *reason* (e.g. "webhook signature check failing"), so you know what to fix.
+- **Agent swimlanes** — each SME's current task, live idle timer (goes amber/red when stuck), spend, and an expandable peek at its terminal output.
+- **Dependency-aware task board** — kanban by status with dependency chips and **critical-path** markers, so you see what's actually gating completion.
+- **Activity timeline** — the live event + inter-agent message feed (handoffs, rejections, merges).
+
+It polls JSON endpoints every 2.5s — zero build step, just `loop dashboard`. (`loop monitor` is the single-screen terminal version.)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arbazkhan971/loop-orchestrator/main/assets/dashboard.png" alt="Loop Orchestrator dashboard showing the autonomous SME team's task board" width="900">
+  <img src="https://raw.githubusercontent.com/arbazkhan971/loop-orchestrator/main/assets/dashboard.png" alt="Loop Orchestrator mission-control dashboard: KPIs, needs-attention, agent swimlanes, dependency-aware task board, and live activity timeline" width="900">
 </p>
 
 ### Example: a todo app the team built

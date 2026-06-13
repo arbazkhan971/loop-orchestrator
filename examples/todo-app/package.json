@@ -1,0 +1,10 @@
+{
+  "name": "loop-todo-app",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A todo app built autonomously by Loop Orchestrator's SME team",
+  "scripts": {
+    "test": "node --test",
+    "start": "node server.js"
+  }
+}

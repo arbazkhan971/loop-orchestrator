@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Loop Todo</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    body { max-width: 560px; margin: 48px auto; padding: 0 16px; }
+    h1 { font-size: 1.5rem; }
+    form { display: flex; gap: 8px; margin: 16px 0; }
+    input[type=text] { flex: 1; padding: 10px 12px; border: 1px solid #8884; border-radius: 8px; font-size: 1rem; }
+    button { padding: 10px 14px; border: 1px solid #8884; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; font-size: 1rem; }
+    ul { list-style: none; padding: 0; }
+    li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #8882; }
+    li.done span { text-decoration: line-through; opacity: 0.55; }
+    li span { flex: 1; }
+    .del { background: transparent; color: #ef4444; border: none; font-size: 1.1rem; }
+    .empty { opacity: 0.6; padding: 16px 0; }
+  </style>
+</head>
+<body>
+  <h1>📝 Loop Todo</h1>
+  <p style="opacity:.6">Built by an autonomous SME team via <code>loop run</code>.</p>
+  <form id="add-form">
+    <input id="title" type="text" placeholder="What needs doing?" autocomplete="off" required />
+    <button type="submit">Add</button>
+  </form>
+  <ul id="list"></ul>
+
+  <script>
+    const api = {
+      list: () => fetch('/api/todos').then(r => r.json()),
+      add: (title) => fetch('/api/todos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) }).then(r => r.json()),
+      toggle: (id) => fetch(`/api/todos/${id}/toggle`, { method: 'POST' }).then(r => r.json()),
+      remove: (id) => fetch(`/api/todos/${id}`, { method: 'DELETE' })
+    };
+
+    const listEl = document.getElementById('list');
+    const form = document.getElementById('add-form');
+    const titleEl = document.getElementById('title');
+
+    function render(todos) {
+      listEl.innerHTML = '';
+      if (!todos.length) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = 'Nothing yet — add your first todo.';
+        listEl.appendChild(li);
+        return;
+      }
+      for (const t of todos) {
+        const li = document.createElement('li');
+        if (t.completed) li.classList.add('done');
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = t.completed;
+        cb.addEventListener('change', async () => { await api.toggle(t.id); refresh(); });
+
+        const span = document.createElement('span');
+        span.textContent = t.title;
+
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = '✕';
+        del.title = 'Delete';
+        del.addEventListener('click', async () => { await api.remove(t.id); refresh(); });
+
+        li.append(cb, span, del);
+        listEl.appendChild(li);
+      }
+    }
+
+    async function refresh() { render(await api.list()); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = titleEl.value.trim();
+      if (!title) return;
+      await api.add(title);
+      titleEl.value = '';
+      refresh();
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

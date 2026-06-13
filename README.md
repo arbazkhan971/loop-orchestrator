@@ -65,6 +65,14 @@ See [docs/autonomous-team.md](docs/autonomous-team.md) for the full guide.
   <img src="https://raw.githubusercontent.com/arbazkhan971/loop-orchestrator/main/assets/dashboard.png" alt="Loop Orchestrator dashboard showing the autonomous SME team's task board" width="900">
 </p>
 
+### Example: a todo app the team built
+
+[`examples/todo-app`](examples/todo-app) is a real, zero-dependency todo app (Node `node:http` API + vanilla-JS UI + `node:test` tests) **built by the SME team** via `loop run` — a Backend SME wrote the store and API in an isolated worktree, a Frontend SME built the UI, and a QA critic reviewed each diff before merging to `main`. The `loop.config.yaml` and `brief.md` that produced it are included so you can reproduce it.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arbazkhan971/loop-orchestrator/main/assets/todo-app.png" alt="The todo app built by the autonomous SME team" width="540">
+</p>
+
 ## Why This Exists
 
 Most agent workflows are either one-off prompts or hard-coded scripts. Loop Orchestrator gives you a portable repo-level control plane:

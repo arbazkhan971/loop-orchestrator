@@ -1,0 +1,49 @@
+version: 1
+defaults:
+  namespace: todo
+  runDir: .loop/runs
+projects:
+  - name: todo-app
+    brief: brief.md
+    workingDir: .
+    intelligence: PROJECT-INTELLIGENCE.md
+    safetyMode: full-auto
+    providers:
+      planner:
+        type: claude
+        model: claude-sonnet-4-6
+        promptMode: argument
+        dangerouslySkipPermissions: true
+      impl:
+        type: claude
+        model: claude-sonnet-4-6
+        promptMode: argument
+        dangerouslySkipPermissions: true
+    roles:
+      - name: pm
+        title: Product Manager
+        provider: planner
+        sme: product-manager
+      - name: be
+        title: Backend Engineer
+        provider: impl
+        sme: backend
+      - name: fe
+        title: Frontend Engineer
+        provider: impl
+        sme: frontend
+      - name: qa
+        title: QA Reviewer
+        provider: impl
+        sme: qa
+    loops:
+      - name: build
+        orchestrator: pm
+        reviewer: qa
+        maxIterations: 5
+        maxRepairs: 2
+        maxParallel: 2
+        isolate: true
+        pollSeconds: 1
+        budgetUsd: 4.0
+        stopWhen: [all tasks done]

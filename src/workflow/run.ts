@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LoadedConfig } from "../config/load.js";
 import { ProjectConfig, WorkflowConfig } from "../config/schema.js";
-import { capturePane, launchRoleSession } from "../tmux.js";
+import { capturePane, launchRoleSession, sessionName } from "../tmux.js";
 import { ConditionContext, firstMet } from "./conditions.js";
 import { initWorkflowState, StageEvaluation, StageState, tickWorkflow, WorkflowState } from "./engine.js";
 
@@ -20,6 +20,7 @@ export type WorkflowRunner = {
   launch: (stage: StageState) => string; // returns the session name
   capture: (stage: StageState, session: string) => string; // pane text
   signals?: (stage: StageState, session: string) => Record<string, boolean>;
+  resolveSession?: (stage: StageState) => string; // deterministic name, used on resume
   onTick?: (state: WorkflowState) => void;
 };
 
@@ -36,23 +37,46 @@ export async function runWorkflow(
   workflow: WorkflowConfig,
   runner: WorkflowRunner,
   clock: WorkflowClock = realClock,
-  options: { maxTicks?: number } = {}
+  options: { maxTicks?: number; initialState?: WorkflowState } = {}
 ): Promise<WorkflowState> {
-  let state = initWorkflowState(workflow);
+  let state = options.initialState ?? initWorkflowState(workflow);
   const sessions = new Map<string, string>();
   const snapshots = new Map<string, { text: string; changedAt: number }>();
+  const startedAt = new Map<string, number>();
+  // Failures observed outside the evaluation pass (e.g. a launch that threw)
+  // are carried into the next tick so the engine's retry budget applies.
+  let carry: Record<string, StageEvaluation> = {};
   let ticks = 0;
 
-  while (!state.done) {
-    // Evaluate every running stage against its completion / failure conditions.
-    const evaluations: Record<string, StageEvaluation> = {};
+  // Resume: reattach to the deterministic sessions of stages already running.
+  if (options.initialState && runner.resolveSession) {
     for (const stage of state.stages) {
       if (stage.status !== "running") continue;
+      sessions.set(stage.name, runner.resolveSession(stage));
+      startedAt.set(stage.name, clock.now());
+      snapshots.set(stage.name, { text: "", changedAt: clock.now() });
+    }
+  }
+
+  while (!state.done) {
+    // Evaluate every running stage against its timeout, then its conditions.
+    const evaluations: Record<string, StageEvaluation> = { ...carry };
+    carry = {};
+    for (const stage of state.stages) {
+      if (stage.status !== "running") continue;
+      if (evaluations[stage.name]) continue; // already decided by a carried failure
       const session = sessions.get(stage.name);
       if (!session) continue;
 
-      const text = runner.capture(stage, session);
       const now = clock.now();
+      const stageConfig = workflow.stages.find((item) => item.name === stage.name)!;
+      const started = startedAt.get(stage.name) ?? now;
+      if (stageConfig.timeoutSeconds && (now - started) / 1000 >= stageConfig.timeoutSeconds) {
+        evaluations[stage.name] = { failed: true, reason: `timeout after ${stageConfig.timeoutSeconds}s` };
+        continue;
+      }
+
+      const text = runner.capture(stage, session);
       const prev = snapshots.get(stage.name);
       const changedAt = !prev || prev.text !== text ? now : prev.changedAt;
       snapshots.set(stage.name, { text, changedAt });
@@ -63,7 +87,6 @@ export async function runWorkflow(
         signals: runner.signals?.(stage, session) ?? {}
       };
 
-      const stageConfig = workflow.stages.find((item) => item.name === stage.name)!;
       const failed = firstMet(stageConfig.failWhen, ctx);
       if (failed) {
         evaluations[stage.name] = { failed: true, reason: reason(failed.condition, failed.evidence) };
@@ -79,9 +102,17 @@ export async function runWorkflow(
     state = tick.state;
 
     for (const stage of tick.launch) {
-      const session = runner.launch(stage);
-      sessions.set(stage.name, session);
-      snapshots.set(stage.name, { text: "", changedAt: clock.now() });
+      try {
+        const session = runner.launch(stage);
+        sessions.set(stage.name, session);
+        startedAt.set(stage.name, clock.now());
+        snapshots.set(stage.name, { text: "", changedAt: clock.now() });
+      } catch (error) {
+        // A launch failure becomes a retryable failure on the next tick rather
+        // than crashing the whole run.
+        sessions.delete(stage.name);
+        carry[stage.name] = { failed: true, reason: `launch failed: ${error instanceof Error ? error.message : String(error)}` };
+      }
     }
 
     runner.onTick?.(state);
@@ -116,6 +147,9 @@ export function createTmuxRunner(
       } catch {
         return "";
       }
+    },
+    resolveSession(stage) {
+      return sessionName(loaded.config.defaults.namespace, project.name, runId, stage.role);
     }
   };
 }

@@ -45,6 +45,17 @@ Each stage maps to a **role** already defined in the project. `dependsOn` refere
 **stage** names. The engine computes the runnable set every tick, so diamond shapes
 (`plan → {be, fe} → qa`) and fan-out/fan-in work without any extra wiring.
 
+### Stage and workflow options
+
+| Field | Scope | Default | Meaning |
+| --- | --- | --- | --- |
+| `retries` | stage | `0` | Extra attempts if the stage fails (a failed stage is relaunched until the budget is spent). |
+| `timeoutSeconds` | stage | none | Fail the stage if it runs longer than this. A timeout counts as a failure, so it also consumes a retry. |
+| `optional` | stage | `false` | The stage failing/being skipped does not block dependents or fail the workflow. |
+| `maxParallel` | workflow | unlimited | Cap on how many stages run at once; extra ready stages wait their turn. |
+| `cadenceSeconds` | workflow | `30` | How often running stages are re-evaluated. |
+| `maxIterations` | workflow | `50` | Hard cap on ticks so a run can never spin forever. |
+
 ## Stop-condition vocabulary
 
 `completeWhen` and `failWhen` accept a small, explicit vocabulary:
@@ -69,6 +80,7 @@ evidence are recorded in the run manifest.
 loop run --workflow delivery --run issue-123            # safe mode (prompt-only shells)
 loop run --workflow delivery --run issue-123 --execute  # launch real agent commands
 loop run --workflow delivery --once                     # single tick: launch ready stages, then exit
+loop run --workflow delivery --run issue-123 --resume   # continue an interrupted run
 ```
 
 If the project defines exactly one workflow, `--workflow` can be omitted.
@@ -80,8 +92,22 @@ If the project defines exactly one workflow, `--workflow` can be omitted.
   block its dependents and does not fail the workflow.
 - **Blocking.** If a required dependency fails, its dependents are skipped (cascading), and
   the workflow ends with outcome `failed`.
+- **Retries & timeouts.** A failing or timed-out stage is relaunched until its `retries`
+  budget is spent, then marked failed for good.
+- **Resilient launch.** If starting a stage's session throws (e.g. a transient tmux error),
+  it is treated as a retryable failure rather than crashing the whole run.
+- **Bounded concurrency.** `maxParallel` limits simultaneous stages; the rest wait.
+- **Resume.** `--resume` rebuilds state from the manifest and reattaches to the running
+  stages' (deterministically named) tmux sessions, so an interrupted run can continue.
 - **Termination.** A run ends as `completed`, `failed`, `max-iterations`, or `stalled`
   (the last meaning a dependency cycle or unreachable stage — nothing left to run).
+
+## Validation
+
+`loop validate` (and `loop doctor`) check workflows before they run: every stage must
+reference a real role, every `dependsOn` must reference a real stage, stage names must be
+unique, and the dependency graph must be acyclic (a cycle is reported as a readable
+`a -> b -> a` path).
 
 ## Run manifest
 

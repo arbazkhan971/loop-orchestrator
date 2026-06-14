@@ -16,6 +16,7 @@ export type StageState = {
   name: string;
   role: string;
   status: StageStatus;
+  attempt: number;
   startedIteration?: number;
   completedIteration?: number;
   stopReason?: string;
@@ -51,7 +52,8 @@ export function initWorkflowState(workflow: WorkflowConfig): WorkflowState {
     stages: workflow.stages.map((stage) => ({
       name: stage.name,
       role: stage.role,
-      status: "pending" as StageStatus
+      status: "pending" as StageStatus,
+      attempt: 0
     }))
   };
 }
@@ -84,15 +86,25 @@ export function tickWorkflow(
   const byName = new Map(stages.map((stage) => [stage.name, stage]));
   const config = new Map(workflow.stages.map((stage) => [stage.name, stage]));
 
-  // 1. Apply observed evaluations to running stages.
+  // 1. Apply observed evaluations to running stages. A failure consumes a retry
+  //    budget: while attempts remain the stage goes back to pending and will be
+  //    relaunched, otherwise it is marked failed for good.
   for (const stage of stages) {
     if (stage.status !== "running") continue;
     const evaluation = evaluations[stage.name];
     if (!evaluation) continue;
     if (evaluation.failed) {
-      stage.status = "failed";
-      stage.completedIteration = iteration;
-      stage.stopReason = evaluation.reason ?? "failure condition met";
+      const allowed = (config.get(stage.name)?.retries ?? 0) + 1;
+      const reasonText = evaluation.reason ?? "failure condition met";
+      if (stage.attempt < allowed) {
+        stage.status = "pending";
+        stage.startedIteration = undefined;
+        stage.stopReason = `retrying (attempt ${stage.attempt + 1}/${allowed}): ${reasonText}`;
+      } else {
+        stage.status = "failed";
+        stage.completedIteration = iteration;
+        stage.stopReason = reasonText;
+      }
     } else if (evaluation.complete) {
       stage.status = "complete";
       stage.completedIteration = iteration;
@@ -119,10 +131,15 @@ export function tickWorkflow(
     }
   }
 
-  // 3. Launch every pending stage whose dependencies are all satisfied.
+  // 3. Launch pending stages whose dependencies are satisfied, bounded by the
+  //    optional concurrency cap so a wide fan-out doesn't start everything at once.
   const launch: StageState[] = [];
+  const runningCount = stages.filter((stage) => stage.status === "running").length;
+  const slots = workflow.maxParallel ? Math.max(0, workflow.maxParallel - runningCount) : Number.POSITIVE_INFINITY;
+
   for (const stage of stages) {
     if (stage.status !== "pending") continue;
+    if (launch.length >= slots) break;
     const deps = config.get(stage.name)?.dependsOn ?? [];
     const ready = deps.every((dep) => {
       const depState = byName.get(dep);
@@ -131,6 +148,7 @@ export function tickWorkflow(
     if (ready) {
       stage.status = "running";
       stage.startedIteration = iteration;
+      stage.attempt += 1;
       launch.push(stage);
     }
   }

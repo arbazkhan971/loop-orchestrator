@@ -59,6 +59,34 @@ describe("workflow engine (pure)", () => {
     expect(state.outcome).toBe("max-iterations");
     expect(state.iteration).toBe(3);
   });
+
+  it("retries a failed stage until its budget is exhausted", () => {
+    const wf = workflow({
+      stages: [{ name: "x", role: "be1", dependsOn: [], completeWhen: [], failWhen: [], optional: false, retries: 1 }]
+    });
+    let tick = tickWorkflow(wf, initWorkflowState(wf), {}); // attempt 1 running
+    expect(tick.state.stages[0].attempt).toBe(1);
+    tick = tickWorkflow(wf, tick.state, { x: { failed: true, reason: "boom" } }); // fail -> retry -> relaunch same tick
+    expect(tick.launch.map((stage) => stage.name)).toEqual(["x"]);
+    expect(tick.state.stages[0].attempt).toBe(2);
+    expect(statusOf(tick.state.stages, "x")).toBe("running");
+    tick = tickWorkflow(wf, tick.state, { x: { failed: true, reason: "boom" } }); // budget gone -> failed
+    expect(statusOf(tick.state.stages, "x")).toBe("failed");
+    expect(tick.state.outcome).toBe("failed");
+  });
+
+  it("respects maxParallel and launches in config order", () => {
+    const wf = workflow({
+      maxParallel: 1,
+      stages: [
+        { name: "a", role: "cto", dependsOn: [], completeWhen: [], failWhen: [], optional: false, retries: 0 },
+        { name: "b", role: "be1", dependsOn: [], completeWhen: [], failWhen: [], optional: false, retries: 0 }
+      ]
+    });
+    const tick = tickWorkflow(wf, initWorkflowState(wf), {});
+    expect(tick.launch.map((stage) => stage.name)).toEqual(["a"]);
+    expect(statusOf(tick.state.stages, "b")).toBe("pending");
+  });
 });
 
 describe("runWorkflow (with fakes)", () => {
@@ -115,5 +143,63 @@ describe("runWorkflow (with fakes)", () => {
     const final = await runWorkflow(wf, runner, { now: () => 0, sleep: async () => {} }, { maxTicks: 1 });
     expect(launched).toEqual(["plan"]);
     expect(final.done).toBe(false);
+  });
+
+  it("times out a stuck stage", async () => {
+    let clock = 0;
+    const fakeClock: WorkflowClock = { now: () => clock, sleep: async (ms) => { clock += ms; } };
+    const wf = workflow({
+      cadenceSeconds: 10,
+      stages: [{ name: "x", role: "be1", dependsOn: [], completeWhen: ["pane-matches:DONE"], failWhen: [], optional: false, retries: 0, timeoutSeconds: 25 }]
+    });
+    const runner: WorkflowRunner = { launch: (stage) => stage.name, capture: () => "still working" };
+    const final = await runWorkflow(wf, runner, fakeClock);
+    expect(final.outcome).toBe("failed");
+    expect(final.stages[0].stopReason).toContain("timeout");
+  });
+
+  it("retries a launch that throws, then completes", async () => {
+    let clock = 0;
+    const fakeClock: WorkflowClock = { now: () => clock, sleep: async (ms) => { clock += ms; } };
+    const wf = workflow({
+      stages: [{ name: "x", role: "be1", dependsOn: [], completeWhen: ["pane-matches:DONE"], failWhen: [], optional: false, retries: 3 }]
+    });
+    let attempts = 0;
+    const runner: WorkflowRunner = {
+      launch: (stage) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("tmux busy");
+        return stage.name;
+      },
+      capture: () => "DONE"
+    };
+    const final = await runWorkflow(wf, runner, fakeClock);
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    expect(final.outcome).toBe("completed");
+  });
+
+  it("resumes from a manifest and reattaches running stages", async () => {
+    const wf = workflow({
+      stages: [{ name: "x", role: "be1", dependsOn: [], completeWhen: ["pane-matches:DONE"], failWhen: [], optional: false, retries: 0 }]
+    });
+    const initialState = {
+      workflow: "delivery",
+      iteration: 3,
+      done: false,
+      stages: [{ name: "x", role: "be1", status: "running" as const, attempt: 1, startedIteration: 1 }]
+    };
+    const resolved: string[] = [];
+    const runner: WorkflowRunner = {
+      launch: (stage) => stage.name,
+      capture: () => "DONE",
+      resolveSession: (stage) => {
+        resolved.push(stage.name);
+        return `sess-${stage.name}`;
+      }
+    };
+    const final = await runWorkflow(wf, runner, { now: () => 0, sleep: async () => {} }, { initialState });
+    expect(resolved).toEqual(["x"]);
+    expect(statusOf(final.stages, "x")).toBe("complete");
+    expect(final.iteration).toBe(4);
   });
 });

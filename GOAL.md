@@ -125,9 +125,12 @@ respect the dependency notes.
 > - **D (history):** `loop runs` lists runs newest-first; `loop show <run>` prints a manifest.
 > - **E:** `loop doctor` — tmux + provider-CLI + auth + config preflight with fixes.
 > - **F:** `loop validate` now checks references (role→provider, role→repo, stage→role/stage),
->   reporting all problems at once.
+>   plus duplicate stage names and dependency cycles, reporting all problems at once.
+> - **Robustness:** per-stage `retries` and `timeoutSeconds`, workflow `maxParallel`,
+>   resilient launches (a tmux failure becomes a retryable failure, not a crash), and
+>   `loop run --resume` to continue an interrupted run by reattaching to live sessions.
 >
-> Still open: loop resume, GitHub-backed signals (G), send-to-agent (H), live dashboard (I),
+> Still open: GitHub-backed signals (G), send-to-agent (H), live dashboard (I),
 > crash detection/restart (J), custom templates (K), cost signal (L).
 
 ### Feature A — The loop runner (make the namesake real) 🔴 highest priority

@@ -57,4 +57,38 @@ describe("config reference validation", () => {
     expect(errors).toContain('[workflow wf] Stage "b" depends on unknown stage "missing".');
     expect(errors).toContain('[workflow wf] Stage "b" depends on itself.');
   });
+
+  it("flags a dependency cycle", () => {
+    const config = project({
+      workflows: [
+        {
+          name: "wf",
+          cadenceSeconds: 30,
+          maxIterations: 50,
+          stages: [
+            { name: "a", role: "be1", dependsOn: ["b"], completeWhen: [], failWhen: [], optional: false, retries: 0 },
+            { name: "b", role: "be1", dependsOn: ["a"], completeWhen: [], failWhen: [], optional: false, retries: 0 }
+          ]
+        }
+      ]
+    });
+    expect(validateProject(config).some((error) => error.includes("Dependency cycle"))).toBe(true);
+  });
+
+  it("flags duplicate stage names", () => {
+    const config = project({
+      workflows: [
+        {
+          name: "wf",
+          cadenceSeconds: 30,
+          maxIterations: 50,
+          stages: [
+            { name: "a", role: "be1", dependsOn: [], completeWhen: [], failWhen: [], optional: false, retries: 0 },
+            { name: "a", role: "be1", dependsOn: [], completeWhen: [], failWhen: [], optional: false, retries: 0 }
+          ]
+        }
+      ]
+    });
+    expect(validateProject(config)).toContain('[workflow wf] Duplicate stage name "a".');
+  });
 });

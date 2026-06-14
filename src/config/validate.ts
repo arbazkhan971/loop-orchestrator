@@ -5,12 +5,48 @@
 
 import { ProjectConfig, RootConfig, WorkflowConfig } from "./schema.js";
 
+// Detects the first dependency cycle, returned as a readable "a -> b -> a" path,
+// or null when the stage graph is acyclic. Only edges to known stages are
+// followed so this is safe to run alongside the unknown-dependency check.
+function findCycle(workflow: WorkflowConfig): string[] | null {
+  const stageNames = new Set(workflow.stages.map((stage) => stage.name));
+  const deps = new Map(workflow.stages.map((stage) => [stage.name, stage.dependsOn.filter((dep) => stageNames.has(dep))]));
+  const state = new Map<string, "visiting" | "done">();
+
+  const walk = (node: string, path: string[]): string[] | null => {
+    state.set(node, "visiting");
+    path.push(node);
+    for (const dep of deps.get(node) ?? []) {
+      if (state.get(dep) === "visiting") return [...path.slice(path.indexOf(dep)), dep];
+      if (!state.has(dep)) {
+        const found = walk(dep, path);
+        if (found) return found;
+      }
+    }
+    path.pop();
+    state.set(node, "done");
+    return null;
+  };
+
+  for (const stage of workflow.stages) {
+    if (!state.has(stage.name)) {
+      const found = walk(stage.name, []);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export function validateWorkflow(project: ProjectConfig, workflow: WorkflowConfig): string[] {
   const errors: string[] = [];
   const roleNames = new Set(project.roles.map((role) => role.name));
   const stageNames = new Set(workflow.stages.map((stage) => stage.name));
 
+  const seen = new Set<string>();
   for (const stage of workflow.stages) {
+    if (seen.has(stage.name)) errors.push(`Duplicate stage name "${stage.name}".`);
+    seen.add(stage.name);
+
     if (!roleNames.has(stage.role)) {
       errors.push(`Stage "${stage.name}" references unknown role "${stage.role}".`);
     }
@@ -19,6 +55,10 @@ export function validateWorkflow(project: ProjectConfig, workflow: WorkflowConfi
       else if (!stageNames.has(dep)) errors.push(`Stage "${stage.name}" depends on unknown stage "${dep}".`);
     }
   }
+
+  const cycle = findCycle(workflow);
+  if (cycle) errors.push(`Dependency cycle: ${cycle.join(" -> ")}.`);
+
   return errors;
 }
 

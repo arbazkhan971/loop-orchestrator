@@ -54,13 +54,16 @@ export const StageSchema = z.object({
   dependsOn: z.array(z.string()).default([]),
   completeWhen: z.array(z.string()).default(["pane-idle:120"]),
   failWhen: z.array(z.string()).default([]),
-  optional: z.boolean().default(false)
+  optional: z.boolean().default(false),
+  retries: z.number().int().nonnegative().default(0),
+  timeoutSeconds: z.number().int().positive().optional()
 });
 
 export const WorkflowSchema = z.object({
   name: z.string().min(1),
   cadenceSeconds: z.number().int().positive().default(30),
   maxIterations: z.number().int().positive().default(50),
+  maxParallel: z.number().int().positive().optional(),
   stages: z.array(StageSchema).min(1)
 });
 

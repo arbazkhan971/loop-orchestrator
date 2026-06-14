@@ -8,6 +8,7 @@ import { startDashboard } from "./dashboard/server.js";
 import { validateConfig, validateWorkflow } from "./config/validate.js";
 import { evaluateDoctor, gatherDoctor } from "./doctor.js";
 import { attachError, attachSession, capturePane, listSessions, startProjectSessions, stopRun } from "./tmux.js";
+import { WorkflowState } from "./workflow/engine.js";
 import { listRuns, readManifest } from "./workflow/manifest.js";
 import { createTmuxRunner, manifestPath, realClock, runWorkflow, writeWorkflowManifest } from "./workflow/run.js";
 
@@ -128,6 +129,7 @@ program
   .option("-r, --run <id>", "run id", defaultRunId())
   .option("--execute", "launch configured agent commands instead of prompt-only shells")
   .option("--once", "run a single tick (launch ready stages) and exit")
+  .option("--resume", "resume an interrupted run from its saved manifest")
   .action(async (options) => {
     const opts = program.opts();
     const loaded = safeLoadConfig(opts.config, opts.json);
@@ -149,12 +151,29 @@ program
       return;
     }
 
+    let initialState: WorkflowState | undefined;
+    if (options.resume) {
+      const manifest = readManifest(loaded, options.run);
+      if (!manifest) {
+        output({ ok: false, error: `No manifest to resume for run "${options.run}".` }, opts.json);
+        process.exitCode = 1;
+        return;
+      }
+      initialState = { workflow: manifest.workflow, iteration: manifest.iteration, done: false, stages: manifest.stages };
+    }
+
+    // Persist whatever state exists if the process is interrupted mid-run.
+    process.on("SIGINT", () => {
+      console.error(`Interrupted. Latest manifest: ${manifestPath(loaded, options.run)}`);
+      process.exit(130);
+    });
+
     const runner = createTmuxRunner(loaded, project, options.run, Boolean(options.execute));
     const finalState = await runWorkflow(
       workflow,
       { ...runner, onTick: (state) => writeWorkflowManifest(loaded, project, options.run, state) },
       realClock,
-      { maxTicks: options.once ? 1 : undefined }
+      { maxTicks: options.once ? 1 : undefined, initialState }
     );
 
     output(
